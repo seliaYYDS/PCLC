@@ -6,8 +6,12 @@ Friend Module ModSecret
     Public Const VersionBranchMain As String = "OpenSource"
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
     Public Const RegFolder As String = "PCLDebug"
-    '用于微软登录的 ClientId
-    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")
+    '用于微软登录的 ClientId。默认使用 Minecraft 官方启动器公开的 Live 应用 ID，无需自行注册 Azure 应用
+    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "00000000402b5328")
+    '微软登录使用的 OAuth 权限范围（Live 版）
+    Public Const MsOAuthScope As String = "service::user.auth.xboxlive.com::MBI_SSL"
+    '微软登录的固定回调地址（由 Live 应用预先注册，无需本地监听）
+    Public Const MsRedirectUri As String = "https://login.live.com/oauth20_desktop.srf"
     'CurseForge API Key
     Public CurseForgeAPIKey As String = If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")
     '用于匿名数据收集的腾讯云日志服务上报 URL，形如 https://{region}.cls.tencentcs.com/track?topic_id={topic_id}
