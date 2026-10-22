@@ -28,13 +28,7 @@ Public Class PageSetupUI
 
         SliderLoad()
 
-        If BuildType = BuildTypes.Release Then PanLauncherHide.Visibility = Visibility.Visible
 
-        '设置解锁
-        If Not RadioLauncherTheme8.IsEnabled Then LabLauncherTheme8Copy.ToolTip = $"累积赞助达到 ¥23.33 后，在爱发电私信发送【土豆 {Identify}】以解锁。" & vbCrLf & "右键打开赞助页面，如果觉得 PCL 做得还不错就支持一下吧 =w=！"
-        RadioLauncherTheme8.ToolTip = $"累积赞助达到 ¥23.33 后，在爱发电私信发送【土豆 {Identify}】以解锁"
-        If Not RadioLauncherTheme9.IsEnabled Then LabLauncherTheme9Copy.ToolTip = "· 反馈一个 Bug，在标记为 [完成] 后回复识别码要求解锁（右键打开反馈页面）" & vbCrLf & "· 提交一个 Pull Request 或主页预设，在标记为 [完成] 后回复识别码要求解锁"
-        RadioLauncherTheme9.ToolTip = "· 反馈一个 Bug，在标记为 [完成] 后回复识别码要求解锁" & vbCrLf & "· 提交一个 Pull Request 或主页预设，在标记为 [完成] 后回复识别码要求解锁"
         '极客蓝的处理在 ThemeCheck 中
 
     End Sub
@@ -42,6 +36,7 @@ Public Class PageSetupUI
         Try
             SettingService.RefreshSettings(Me)
             BackgroundRefresh(False, False)
+            RefreshPickers()
 
             '标题栏
             CheckLogoLeft.Visibility = If(RadioLogoType0.Checked, Visibility.Visible, Visibility.Collapsed)
@@ -350,70 +345,6 @@ Refresh:
         End If
     End Sub
 
-    '主题
-    Private Sub LabLauncherTheme5Unlock_MouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs) Handles LabLauncherTheme5Unlock.MouseLeftButtonUp
-        RadioLauncherTheme5Gray.Opacity -= 0.7
-        RadioLauncherTheme5.Opacity += 0.7
-        AniStart({
-            AaOpacity(RadioLauncherTheme5Gray, 1, 1000 * AniSpeed, 500 * AniSpeed, New AniEaseInFluent),
-            AaOpacity(RadioLauncherTheme5, -1, 1000 * AniSpeed, 500 * AniSpeed, New AniEaseInFluent)
-        }, "ThemeUnlock")
-        If RadioLauncherTheme5Gray.Opacity < 0.02 Then
-            ThemeUnlock(5, UnlockHint:="隐藏主题 玄素黑 已解锁！")
-            AniStop("ThemeUnlock")
-            RadioLauncherTheme5.Checked = True
-        End If
-    End Sub
-    Private Sub LabLauncherTheme11Click_MouseLeftButtonUp() Handles LabLauncherTheme11Click.MouseLeftButtonUp, RadioLauncherTheme11.MouseRightButtonUp
-        If LabLauncherTheme11Click.Visibility = Visibility.Collapsed OrElse If(LabLauncherTheme11Click.ToolTip, "").ToString.Contains("点击") Then
-            If MyMsgBox(
-                "1. 不爬取或攻击相关服务或网站，不盗取相关账号，没有谜题可以或需要以此来解决。" & vbCrLf &
-                "2. 不得篡改或损毁相关公开信息，请尽量让它们保持原状。" & vbCrLf &
-                "3. 在你感到迷茫的时候，看看回声洞可能会给你带来惊喜。" & vbCrLf & vbCrLf &
-                "若违规，可能会被从任意相关群中踢出！",
-                "解密游戏的基本规则", "我知道了", "恕我拒绝") = 1 Then
-                MyMsgBox("你需要用自己的智慧来找到下一步的线索……" & vbCrLf &
-                         "初始线索：gnp.dorC61\60\20\0202\moc.x1xa.2s\\:sp" & "T".Lower & "th", "解密游戏") '防止触发病毒检测规则
-            End If
-        End If
-    End Sub
-    Private Sub LabLauncherTheme8Copy_MouseRightButtonUp() Handles LabLauncherTheme8Copy.MouseRightButtonUp, RadioLauncherTheme8.MouseRightButtonUp
-        OpenWebsite("https://meloong.com/afd/a/LTCat")
-    End Sub
-    Private Sub LabLauncherTheme9Copy_MouseRightButtonUp() Handles LabLauncherTheme9Copy.MouseRightButtonUp, RadioLauncherTheme9.MouseRightButtonUp
-        PageOtherLeft.TryFeedback()
-    End Sub
-
-    '主题自定义
-    Private Sub RadioLauncherTheme14_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme14.Changed
-        If RadioLauncherTheme14.Checked Then
-            If LabLauncherHue.Visibility = Visibility.Visible Then Return
-            LabLauncherHue.Visibility = Visibility.Visible
-            SliderLauncherHue.Visibility = Visibility.Visible
-            LabLauncherSat.Visibility = Visibility.Visible
-            SliderLauncherSat.Visibility = Visibility.Visible
-            LabLauncherDelta.Visibility = Visibility.Visible
-            SliderLauncherDelta.Visibility = Visibility.Visible
-            LabLauncherLight.Visibility = Visibility.Visible
-            SliderLauncherLight.Visibility = Visibility.Visible
-        Else
-            If LabLauncherHue.Visibility = Visibility.Collapsed Then Return
-            LabLauncherHue.Visibility = Visibility.Collapsed
-            SliderLauncherHue.Visibility = Visibility.Collapsed
-            LabLauncherSat.Visibility = Visibility.Collapsed
-            SliderLauncherSat.Visibility = Visibility.Collapsed
-            LabLauncherDelta.Visibility = Visibility.Collapsed
-            SliderLauncherDelta.Visibility = Visibility.Collapsed
-            LabLauncherLight.Visibility = Visibility.Collapsed
-            SliderLauncherLight.Visibility = Visibility.Collapsed
-        End If
-        CardLauncher.TriggerForceResize()
-    End Sub
-    Private Sub HSL_Change() Handles SliderLauncherHue.Change, SliderLauncherLight.Change, SliderLauncherSat.Change, SliderLauncherDelta.Change
-        If AniControlEnabled <> 0 OrElse SliderLauncherSat Is Nothing OrElse Not SliderLauncherSat.IsLoaded Then Return
-        ThemeRefresh()
-    End Sub
-
 #Region "功能隐藏"
 
     Private Shared _HiddenForceShow As Boolean = False
@@ -593,32 +524,57 @@ Refresh:
 
 #End Region
 
+    '自定义配色
+    Private Sub PickerPrimary_Changed() Handles PickerPrimary.Changed
+        ApplyPickerColor(True)
+    End Sub
+    Private Sub PickerSecondary_Changed() Handles PickerSecondary.Changed
+        ApplyPickerColor(False)
+    End Sub
+
+    '将某一个取色器的结果写入自定义配色并应用
+    Private Sub ApplyPickerColor(IsPrimary As Boolean)
+        Dim Picked As Color = If(IsPrimary, PickerPrimary.SelectedColor, PickerSecondary.SelectedColor)
+        Dim NewH As Integer, NewS As Integer, NewL As Integer
+        MyColorToHsl(New MyColor(Picked.R, Picked.G, Picked.B), NewH, NewS, NewL)
+        Dim PrimH As Integer = If(IsPrimary, NewH, ColorHue)
+        Dim PrimS As Integer = If(IsPrimary, NewS, ColorSat)
+        Dim PrimL As Integer = If(IsPrimary, NewL, 45 + ColorLightAdjust)
+        Dim SecH As Integer = If(IsPrimary, ColorHue2, NewH)
+        Dim SecS As Integer = If(IsPrimary, ColorSat2, NewS)
+        Dim SecL As Integer = If(IsPrimary, 48 + ColorLightAdjust2, NewL)
+        Settings.Set("UiCustomPrimary", $"{PrimH},{PrimS},{PrimL}")
+        Settings.Set("UiCustomSecondary", $"{SecH},{SecS},{SecL}")
+        Settings.Set("UiLauncherTheme", 14)
+        '主题值没变时 Set 不会触发刷新，这里强制重算一次，保证连续调整都生效
+        ThemeRefresh()
+        '同步单选框状态，让界面切到「自定义」
+        SettingService.RefreshSettings(Me)
+    End Sub
+
+    '按当前主题刷新两个取色器的初始颜色
+    Private Sub RefreshPickers()
+        If PickerPrimary Is Nothing Then Return
+        Dim H1 As Integer, S1 As Integer, L1 As Integer
+        Dim H2 As Integer, S2 As Integer, L2 As Integer
+        If GetThemeColors(Settings.Get(Of Integer)("UiLauncherTheme"), H1, S1, L1, H2, S2, L2) Then
+            PickerPrimary.SetColor(CType(New MyColor().FromHSL2(H1, S1, L1), Color))
+            PickerSecondary.SetColor(CType(New MyColor().FromHSL2(H2, S2, L2), Color))
+        Else
+            PickerPrimary.SetColor(CType(New MyColor().FromHSL2(ColorHue, ColorSat, 45 + ColorLightAdjust), Color))
+            PickerSecondary.SetColor(CType(New MyColor().FromHSL2(ColorHue2, ColorSat2, 48 + ColorLightAdjust2), Color))
+        End If
+    End Sub
+
+    '切换主题时同步两个取色器（延后到设置写入之后）
+    Private Sub ThemeRadio_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme0.Changed, RadioLauncherTheme1.Changed, RadioLauncherTheme2.Changed, RadioLauncherTheme3.Changed, RadioLauncherTheme4.Changed, RadioLauncherTheme5.Changed, RadioLauncherTheme6.Changed, RadioLauncherTheme7.Changed, RadioLauncherTheme8.Changed, RadioLauncherTheme9.Changed, RadioLauncherTheme10.Changed, RadioLauncherTheme11.Changed, RadioLauncherTheme12.Changed, RadioLauncherTheme13.Changed, RadioLauncherTheme14.Changed, RadioLauncherTheme15.Changed
+        If AniControlEnabled <> 0 Then Return
+        Dispatcher.BeginInvoke(New Action(Sub() RefreshPickers()))
+    End Sub
     '滑动条
     Private Sub SliderLoad()
         SliderMusicVolume.GetHintText = Function(v) Math.Ceiling(v * 0.1) & "%"
         SliderLauncherTransparent.GetHintText = Function(v) Math.Round(40 + v * 0.1) & "%"
-        SliderLauncherHue.GetHintText = Function(v) v & "°"
-        SliderLauncherSat.GetHintText = Function(v) v & "%"
-        SliderLauncherDelta.GetHintText =
-        Function(Value As Integer) As String
-            If Value > 90 Then
-                Return "+" & (Value - 90)
-            ElseIf Value = 90 Then
-                Return 0
-            Else
-                Return Value - 90
-            End If
-        End Function
-        SliderLauncherLight.GetHintText =
-        Function(Value As Integer) As String
-            If Value > 20 Then
-                Return "+" & (Value - 20)
-            ElseIf Value = 20 Then
-                Return 0
-            Else
-                Return Value - 20
-            End If
-        End Function
         SliderBackgroundOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
         SliderBackgroundBlur.GetHintText = Function(v) v & " 像素"
     End Sub

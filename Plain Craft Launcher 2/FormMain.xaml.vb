@@ -345,6 +345,7 @@ Public Class FormMain
         Handle = New WindowInteropHelper(Me).Handle
         '读取设置
         UpdateBackgroundAndTitleBar()
+        ApplyWindowRadius()
         PageSetupUI.HiddenRefresh()
         PageSetupUI.BackgroundRefresh(False, True)
         MusicRefreshPlay(False, True)
@@ -449,12 +450,6 @@ Public Class FormMain
     Private Sub RunCountSub()
         Settings.Set("SystemCount", Settings.Get(Of Integer)("SystemCount") + 1)
         If BuildType = BuildTypes.Snapshot Then
-            Select Case Settings.Get(Of Integer)("SystemCount")
-                Case 1
-                    MyMsgBox("欢迎使用 PCL 快照版！" & vbCrLf &
-                             "快照版包含尚未在正式版发布的测试性功能，仅用于赞助者本人尝鲜。所以请不要发给其他人或者用于制作整合包哦！" & vbCrLf &
-                             "如果你并非通过赞助或赞助者本人邀请进群获得的本程序，那么可能是有人在违规传播，记得提醒他一下啦。", "快照版使用说明")
-            End Select
             If Settings.Get(Of Integer)("SystemCount") >= 99 Then
                 If ThemeUnlock(6, False) Then
                     MyMsgBox("你已经使用了 99 次 PCL 啦，感谢你长期以来的支持！" & vbCrLf &
@@ -662,6 +657,19 @@ Public Class FormMain
     Public Shared Sub UpdateBackgroundAndTitleBar(Value) '从设置更新
         If FrmMain Is Nothing OrElse Not FrmMain.IsLoaded Then Return
         FrmMain.UpdateBackgroundAndTitleBar()
+    End Sub
+    ''' <summary>
+    ''' 按设置应用主窗口圆角。
+    ''' </summary>
+    Public Shared Sub ApplyWindowRadius()
+        Try
+            If FrmMain Is Nothing Then Return
+            Dim Radius As Double = Math.Max(0, Math.Min(24, Settings.Get(Of Integer)("UiWindowRadius")))
+            FrmMain.RectForm.RadiusX = Radius
+            FrmMain.RectForm.RadiusY = Radius
+        Catch ex As Exception
+            Logger.Warn(ex, "应用窗口圆角失败")
+        End Try
     End Sub
     Public Sub UpdateBackgroundAndTitleBar()
         Logger.Info("从设置更新背景图片与标题栏样式")
