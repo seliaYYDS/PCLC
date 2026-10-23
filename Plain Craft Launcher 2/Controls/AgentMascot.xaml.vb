@@ -875,7 +875,7 @@ Public Class AgentMascot
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
         Canvas.SetLeft(PanMessageLayer, 0)
         Canvas.SetTop(PanMessageLayer, 0)
-        PanMessageLayer.Clip = New RectangleGeometry(New Rect(0, AreaTop, Math.Max(0, ActualWidth), Math.Max(0, AreaBottom - AreaTop)))
+        PanMessageLayer.Clip = New RectangleGeometry(New Rect(0, AreaTop, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight - AreaTop)))
         WheelCatcher.Width = 320
         WheelCatcher.Height = Math.Max(0, AreaBottom - Math.Min(Bottom, AreaBottom))
         Canvas.SetLeft(WheelCatcher, BaseX)

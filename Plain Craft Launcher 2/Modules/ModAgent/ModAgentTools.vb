@@ -276,8 +276,17 @@ Public Module ModAgentTools
         Try
             Dim State As New JObject()
             State("version") = VersionBranchMain
-            State("theme") = Settings.Get(Of Integer)("UiLauncherTheme")
-            State("memory") = Settings.Get(Of Integer)("VersionRam")
+            Try
+                State("theme") = Settings.Get(Of Integer)("UiLauncherTheme")
+            Catch
+                State("theme") = 0
+            End Try
+            Dim Ram As Integer = 0
+            Try
+                Ram = Settings.Get(Of Integer)("VersionRam")
+            Catch
+            End Try
+            State("memory") = Ram
             State("java") = Settings.Get(Of String)("LaunchArgumentJavaExe")
             State("selectedInstance") = If(McInstanceSelected Is Nothing, Nothing, McInstanceSelected.Name)
             Return State.ToString(Newtonsoft.Json.Formatting.None)
@@ -326,7 +335,12 @@ Public Module ModAgentTools
             If Count <= 0 Then Count = 120
             Dim Path As String = Paths.Base & "PCL\Log1.txt"
             If Not IO.File.Exists(Path) Then Return "找不到日志文件：" & Path
-            Dim All As String() = IO.File.ReadAllLines(Path)
+            Dim All As String()
+            Using Stream As New IO.FileStream(Path, IO.FileMode.Open, IO.FileAccess.Read, IO.FileShare.ReadWrite)
+                Using Reader As New IO.StreamReader(Stream, System.Text.Encoding.UTF8)
+                    All = Reader.ReadToEnd().Split({vbCrLf, vbLf}, StringSplitOptions.None)
+                End Using
+            End Using
             Dim Start As Integer = Math.Max(0, All.Length - Count)
             Dim Builder As New Text.StringBuilder()
             For Index As Integer = Start To All.Length - 1
@@ -905,7 +919,8 @@ Public Module ModAgentTools
         If WorkDir Is Nothing Then Return "工作目录超出 .minecraft 目录"
         If Not IO.Directory.Exists(WorkDir) Then WorkDir = McFolderSelected
         Try
-            Dim Info As New Diagnostics.ProcessStartInfo("pwsh", "-NoProfile -NonInteractive -Command " & Command) With {
+            Dim Exe As String = "pwsh"
+            Dim Info As New Diagnostics.ProcessStartInfo(Exe, "-NoProfile -NonInteractive -Command " & Command) With {
                 .WorkingDirectory = WorkDir,
                 .RedirectStandardOutput = True,
                 .RedirectStandardError = True,
@@ -921,6 +936,27 @@ Public Module ModAgentTools
                 Return Result
             End Using
         Catch ex As Exception
+            If TypeOf ex Is ComponentModel.Win32Exception Then
+                Try
+                    Dim Info2 As New Diagnostics.ProcessStartInfo("powershell", "-NoProfile -NonInteractive -Command " & Command) With {
+                        .WorkingDirectory = WorkDir,
+                        .RedirectStandardOutput = True,
+                        .RedirectStandardError = True,
+                        .UseShellExecute = False,
+                        .CreateNoWindow = True}
+                    Using Proc2 = Diagnostics.Process.Start(Info2)
+                        Dim Out2 As String = Proc2.StandardOutput.ReadToEnd()
+                        Dim Err2 As String = Proc2.StandardError.ReadToEnd()
+                        Proc2.WaitForExit(60000)
+                        Dim Res2 As String = Out2
+                        If Err2.Length > 0 Then Res2 &= vbCrLf & "[stderr]" & vbCrLf & Err2
+                        If Res2.Length > 20000 Then Res2 = Res2.Substring(Res2.Length - 20000)
+                        Return Res2
+                    End Using
+                Catch ex2 As Exception
+                    Return "执行失败：" & ex2.Message
+                End Try
+            End If
             Return "执行失败：" & ex.Message
         End Try
     End Function

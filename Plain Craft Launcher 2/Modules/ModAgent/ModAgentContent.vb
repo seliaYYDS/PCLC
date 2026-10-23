@@ -150,10 +150,21 @@ Public Module ModAgentContent
         Return Nothing
     End Function
 
-    Private Function ContentFolder(Type As String, World As String, InstanceName As String) As String
+    ''' <summary>解析实例的独立目录；实例列表尚未加载时直接按 versions 目录兜底。</summary>
+    Private Function ResolveBase(InstanceName As String) As String
         Dim Instance As McInstance = FindInstance(InstanceName)
-        If Instance Is Nothing Then Return Nothing
-        Dim Base As String = If(String.IsNullOrWhiteSpace(Instance.PathIndie), McFolderSelected, Instance.PathIndie)
+        If Instance IsNot Nothing Then
+            Return If(String.IsNullOrWhiteSpace(Instance.PathIndie), McFolderSelected, Instance.PathIndie)
+        End If
+        If Not String.IsNullOrWhiteSpace(InstanceName) Then
+            Dim Folder As String = IO.Path.Combine(McFolderSelected, "versions", InstanceName.Trim())
+            If IO.Directory.Exists(Folder) Then Return Folder
+        End If
+        Return McFolderSelected
+    End Function
+
+    Private Function ContentFolder(Type As String, World As String, InstanceName As String) As String
+        Dim Base As String = ResolveBase(InstanceName)
         Select Case Type.ToLower()
             Case "mod" : Return IO.Path.Combine(Base, "mods")
             Case "resourcepack" : Return IO.Path.Combine(Base, "resourcepacks")
@@ -378,7 +389,6 @@ Public Module ModAgentContent
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
             Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
-            If Not String.IsNullOrWhiteSpace(InstanceName) AndAlso FindInstance(InstanceName) Is Nothing Then Return "没有找到版本：" & InstanceName
             Dim Folder As String = ContentFolder(Type, World, InstanceName)
             If Folder Is Nothing Then Return "datapack 需要提供 world 参数" & If(Type.ToLower() = "datapack", "", "，或资源类型不受支持")
             IO.Directory.CreateDirectory(Folder)
@@ -431,11 +441,9 @@ Public Module ModAgentContent
     Private Function ListWorlds(Args As JObject) As String
         Try
             Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
-            Dim Instance As McInstance = FindInstance(InstanceName)
-            If Instance Is Nothing Then Return "没有找到版本：" & InstanceName
-            Dim Base As String = If(String.IsNullOrWhiteSpace(Instance.PathIndie), McFolderSelected, Instance.PathIndie)
+            Dim Base As String = ResolveBase(InstanceName)
             Dim Saves As String = IO.Path.Combine(Base, "saves")
-            If Not IO.Directory.Exists(Saves) Then Return "当前没有存档目录"
+            If Not IO.Directory.Exists(Saves) Then Return "当前没有存档目录：" & Saves
             Dim Items As New JArray()
             For Each Folder In IO.Directory.GetDirectories(Saves)
                 Items.Add(IO.Path.GetFileName(Folder))
@@ -569,7 +577,6 @@ Public Module ModAgentContent
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
             Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
-            If Not String.IsNullOrWhiteSpace(InstanceName) AndAlso FindInstance(InstanceName) Is Nothing Then Return "没有找到版本：" & InstanceName
             Dim Folder As String = ContentFolder(Type, World, InstanceName)
             If Folder Is Nothing Then Return "无法确定目标目录"
             Dim Target As String = IO.Path.Combine(Folder, IO.Path.GetFileName(FileName))
