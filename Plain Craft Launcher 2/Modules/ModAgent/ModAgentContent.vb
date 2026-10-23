@@ -96,6 +96,21 @@ Public Module ModAgentContent
             }},
             {"required", New JArray From {"fileName"}}
         }
+        Dim CheckSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"instance", New JObject From {{"type", "string"}, {"description", "Instance name (default: selected)."}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Override Minecraft version."}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "Override loader: fabric/forge/neoforge."}}}
+            }}
+        }
+        List.Add(New AgentTool With {
+            .Name = "check_mod_updates",
+            .Description = "Check installed mods for updates against Modrinth (by file hash).",
+            .Risk = 0,
+            .Schema = CheckSchema,
+            .Run = Function(Args) CheckModUpdates(Args)})
+
         List.Add(New AgentTool With {
             .Name = "delete_content",
             .Description = "Delete a resource file from the instance.",
@@ -747,6 +762,85 @@ Public Module ModAgentContent
             Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
         Catch ex As Exception
             Return "批量安装失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ComputeSha1(Path As String) As String
+        Using Stream As IO.FileStream = IO.File.OpenRead(Path)
+            Using Hash As System.Security.Cryptography.SHA1 = System.Security.Cryptography.SHA1.Create()
+                Dim Bytes As Byte() = Hash.ComputeHash(Stream)
+                Dim Builder As New StringBuilder()
+                For Each B In Bytes
+                    Builder.Append(B.ToString("x2"))
+                Next
+                Return Builder.ToString()
+            End Using
+        End Using
+    End Function
+
+    Private Function CheckModUpdates(Args As JObject) As String
+        Try
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            Dim Target As McInstance = FindInstance(InstanceName)
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            If Target IsNot Nothing AndAlso Target.Version IsNot Nothing Then
+                If GameVersion = "" Then GameVersion = Target.Version.VanillaName
+                If Loader = "" Then
+                    If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.Fabric) Then Loader = "fabric"
+                    If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.Forge) Then Loader = "forge"
+                    If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.NeoForge) Then Loader = "neoforge"
+                End If
+            End If
+            Dim Base As String = ResolveBase(InstanceName)
+            Dim Folder As String = IO.Path.Combine(Base, "mods")
+            If Not IO.Directory.Exists(Folder) Then Return "没有 mods 目录：" & Folder
+            Dim Items As New JArray()
+            Dim Checked As Integer = 0
+            For Each File In IO.Directory.GetFiles(Folder, "*.jar")
+                If Checked >= 30 Then Exit For
+                Checked += 1
+                Dim Name As String = IO.Path.GetFileName(File)
+                Try
+                    Dim Hash As String = ComputeSha1(File)
+                    Dim VersionJson As JToken = GetJson(ModrinthApi & "version_file/" & Hash & "?algorithm=sha1")
+                    Dim ProjectId As String = VersionJson("project_id")?.ToString()
+                    Dim CurrentId As String = VersionJson("id")?.ToString()
+                    Dim CurrentName As String = VersionJson("version_number")?.ToString()
+                    Dim LatestId As String = CurrentId
+                    Dim LatestName As String = CurrentName
+                    If Not String.IsNullOrWhiteSpace(ProjectId) Then
+                        Dim Query As New List(Of String)
+                        If GameVersion <> "" Then Query.Add("game_versions=" & Uri.EscapeDataString("[""" & GameVersion & """]"))
+                        If Loader <> "" Then Query.Add("loaders=" & Uri.EscapeDataString("[""" & Loader.ToLower() & """]"))
+                        Dim Url As String = ModrinthApi & "project/" & ProjectId & "/version"
+                        If Query.Count > 0 Then Url &= "?" & String.Join("&", Query)
+                        Dim Versions As JArray = TryCast(GetJson(Url), JArray)
+                        If Versions IsNot Nothing AndAlso Versions.Count > 0 Then
+                            Dim Picked As JToken = Versions(0)
+                            For Each V In Versions
+                                If V("version_type")?.ToString() = "release" Then Picked = V : Exit For
+                            Next
+                            LatestId = Picked("id")?.ToString()
+                            LatestName = Picked("version_number")?.ToString()
+                        End If
+                    End If
+                    Items.Add(New JObject From {
+                        {"file", Name},
+                        {"projectId", ProjectId},
+                        {"current", CurrentName},
+                        {"latest", LatestName},
+                        {"update", Not String.Equals(CurrentId, LatestId)}
+                    })
+                Catch ex As Exception
+                    Items.Add(New JObject From {{"file", Name}, {"error", "无法识别或查询失败"}})
+                End Try
+            Next
+            Return New JObject From {
+                {"gameVersion", GameVersion}, {"loader", Loader}, {"checked", Checked}, {"items", Items}
+            }.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "检查更新失败：" & ex.Message
         End Try
     End Function
 
