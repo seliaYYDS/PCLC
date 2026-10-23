@@ -436,19 +436,22 @@ Public Class AgentMascot
                 AnimateBlockAppear(Element)
             End If
             Dim Existing As UIElement = Entry.Host.Children(Index)
-            Dim WantPanel As Boolean = Models(Index).Kind <> 4 AndAlso Models(Index).Kind <> 5 AndAlso Models(Index).Kind <> 6
-            If WantPanel <> TypeOf Existing Is WrapPanel Then
+            Dim Kind As Integer = Models(Index).Kind
+            Dim IsPanel As Boolean = TypeOf Existing Is WrapPanel
+            Dim ExpectedPanel As Boolean = (Kind <> 4 AndAlso Kind <> 5 AndAlso Kind <> 6)
+            If ExpectedPanel <> IsPanel Then
                 Dim Fresh As UIElement = CreateBlockElement(Models(Index))
                 Entry.Host.Children(Index) = Fresh
                 Existing = Fresh
             End If
-            If TypeOf Existing Is WrapPanel Then
-                UpdateBlockElement(Existing, Models(Index))
-            ElseIf Models(Index).Kind = 6 Then
+            If Kind = 6 Then
                 Dim Holder = TryCast(Existing, FrameworkElement)
                 If Holder Is Nothing OrElse Not String.Equals(TryCast(Holder.Tag, String), Models(Index).Text) Then
                     Entry.Host.Children(Index) = CreateBlockElement(Models(Index))
+                    Entry.Box.InvalidateMeasure()
                 End If
+            ElseIf TypeOf Existing Is WrapPanel Then
+                UpdateBlockElement(Existing, Models(Index))
             End If
         Next
         Entry.DirtyContent = True
@@ -589,13 +592,14 @@ Public Class AgentMascot
                 For C As Integer = 0 To Columns - 1
                     Dim Content As String = If(C < Rows(R).Count, Rows(R)(C), "")
                     Dim Cell As New TextBlock With {
-                        .Text = Content,
+                        .Text = "",
                         .FontSize = 12,
                         .FontWeight = If(R = 0, FontWeights.SemiBold, FontWeights.Normal),
                         .Foreground = New MyColor(60, 64, 80),
                         .Margin = New Thickness(6, 3, 6, 3),
                         .TextWrapping = TextWrapping.Wrap,
                         .MaxWidth = 160}
+                    AddInline(Cell, Content)
                     Dim Holder As New Border With {
                         .Child = Cell,
                         .BorderBrush = New MyColor(228, 231, 240),
