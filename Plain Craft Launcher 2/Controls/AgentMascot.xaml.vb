@@ -23,6 +23,7 @@ Public Class AgentMascot
         Public Shift As New TranslateTransform()
         Public ScrollOffset As Double = 0
         Public TargetOffset As Double = 0
+        Public LastAppliedOffset As Double = 0
         Public NeedScroll As Boolean = False
         Public RenderedBlocks As Integer = 0
         Public ShowingThinking As Boolean = False
@@ -179,8 +180,15 @@ Public Class AgentMascot
         '平滑滚动长消息
         For Each Entry In Entries
             If Entry.Viewer Is Nothing Then Continue For
+            '用户拖动滚动条：位置与上次程序设置的不一致，则同步目标
+            If Math.Abs(Entry.Viewer.VerticalOffset - Entry.LastAppliedOffset) > 1 Then
+                Entry.TargetOffset = Entry.Viewer.VerticalOffset
+                Entry.LastAppliedOffset = Entry.Viewer.VerticalOffset
+            End If
             If Math.Abs(Entry.TargetOffset - Entry.Viewer.VerticalOffset) < 0.5 Then Continue For
-            Entry.Viewer.ScrollToVerticalOffset(Entry.Viewer.VerticalOffset + (Entry.TargetOffset - Entry.Viewer.VerticalOffset) * 0.25)
+            Dim NextOffset As Double = Entry.Viewer.VerticalOffset + (Entry.TargetOffset - Entry.Viewer.VerticalOffset) * 0.25
+            Entry.Viewer.ScrollToVerticalOffset(NextOffset)
+            Entry.LastAppliedOffset = NextOffset
         Next
         Dim Offset As New Point(CurrentX - AnchorX, CurrentY - AnchorY)
         Samples.Add(New OffsetSample With {.Stamp = Now, .Offset = Offset})
@@ -408,11 +416,11 @@ Public Class AgentMascot
                 End While
                 Result.Add(New AgentBlock With {.Kind = 1, .Level = Level, .Text = Trimmed.TrimStart("#"c).Trim()})
             ElseIf Trimmed.StartsWith(">") Then
-                Result.Add(New AgentBlock With {.Kind = 3, .Text = Trimmed.TrimStart(">"c).Trim()})
+                Result.Add(New AgentBlock With {.Kind = 3, .Text = Trimmed.TrimStart(">"c).Trim(), .Level = Math.Min(Indent \ 2, 6)})
             ElseIf Trimmed.StartsWith("- ") OrElse Trimmed.StartsWith("* ") Then
-                Result.Add(New AgentBlock With {.Kind = 2, .Text = "• " & Trimmed.Substring(2), .Level = Indent})
+                Result.Add(New AgentBlock With {.Kind = 2, .Text = "• " & Trimmed.Substring(2), .Level = Math.Min(Indent \ 2, 6)})
             Else
-                Result.Add(New AgentBlock With {.Kind = 0, .Text = Trimmed, .Level = Indent})
+                Result.Add(New AgentBlock With {.Kind = 0, .Text = Trimmed, .Level = Math.Min(Indent \ 2, 6)})
             End If
         Next
         If Code.Length > 0 Then Result.Add(New AgentBlock With {.Kind = 4, .Text = Code.ToString().TrimEnd()})
@@ -437,7 +445,7 @@ Public Class AgentMascot
             Return New Border With {.Height = 1, .Background = New MyColor(226, 229, 238), .Margin = New Thickness(0, 6, 0, 6)}
         End If
         Dim Panel As New WrapPanel With {
-            .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 4, 16), Math.Min(Model.Level * 4, 16)), 1, 0, 1),
+            .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 3, 24), Math.Min(Model.Level * 3, 24)), 1, 0, 1),
             .HorizontalAlignment = HorizontalAlignment.Left}
         Panel.Tag = 0
         Return Panel
@@ -446,29 +454,60 @@ Public Class AgentMascot
     Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
         Dim Panel As WrapPanel = TryCast(Element, WrapPanel)
         If Panel Is Nothing Then Return
+        Dim Display As String = ""
+        Dim Styles As List(Of Integer) = BuildInlineStyles(Model.Text, Display)
         Dim Rendered As Integer = If(Panel.Tag Is Nothing, 0, CInt(Panel.Tag))
-        If Rendered >= Model.Text.Length Then Return
+        If Rendered >= Display.Length Then Return
         Dim Size As Double = If(Model.Kind = 1, If(Model.Level <= 1, 16.0, 14.5), 13.0)
         Dim Weight As FontWeight = If(Model.Kind = 1, FontWeights.SemiBold, FontWeights.Normal)
         Dim ForeColor As Color = CType(If(Model.Kind = 3, New MyColor(110, 116, 135), New MyColor(51, 51, 51)), Color)
         Dim Index As Integer = Rendered
-        While Index < Model.Text.Length
-            Dim Length As Integer = NextUnit(Model.Text, Index)
-            Dim Piece As String = Model.Text.Substring(Index, Length)
+        While Index < Display.Length
+            Dim Length As Integer = NextUnit(Display, Index)
+            Dim Piece As String = Display.Substring(Index, Length)
+            Dim Style As Integer = If(Index < Styles.Count, Styles(Index), 0)
             Dim CharBlock As New TextBlock With {
                 .Text = Piece,
                 .FontSize = Size,
-                .FontWeight = Weight,
+                .FontWeight = If(Style = 1, FontWeights.Bold, Weight),
                 .Foreground = New SolidColorBrush(ForeColor),
                 .TextWrapping = TextWrapping.NoWrap}
+            If Style = 2 Then
+                CharBlock.FontFamily = New FontFamily("Consolas")
+                CharBlock.Foreground = New SolidColorBrush(CType(New MyColor(90, 96, 120), Color))
+            End If
             Panel.Children.Add(CharBlock)
             AnimateCharAppear(CharBlock)
             Index += Length
         End While
         CompactPanel(Panel)
-        Panel.Tag = Model.Text.Length
+        Panel.Tag = Display.Length
     End Sub
 
+    Private Shared Function BuildInlineStyles(Text As String, ByRef Display As String) As List(Of Integer)
+        Dim Styles As New List(Of Integer)
+        Dim Builder As New StringBuilder()
+        Dim Bold As Boolean = False
+        Dim Code As Boolean = False
+        Dim Index As Integer = 0
+        While Index < Text.Length
+            If Not Code AndAlso Index + 1 < Text.Length AndAlso Text(Index) = "*"c AndAlso Text(Index + 1) = "*"c Then
+                Bold = Not Bold
+                Index += 2
+                Continue While
+            End If
+            If Text(Index) = ChrW(96) Then
+                Code = Not Code
+                Index += 1
+                Continue While
+            End If
+            Builder.Append(Text(Index))
+            Styles.Add(If(Code, 2, If(Bold, 1, 0)))
+            Index += 1
+        End While
+        Display = Builder.ToString()
+        Return Styles
+    End Function
     Private Shared Function NextUnit(Text As String, Start As Integer) As Integer
         Dim C As Char = Text(Start)
         If Char.IsLetterOrDigit(C) AndAlso AscW(C) < 128 Then
