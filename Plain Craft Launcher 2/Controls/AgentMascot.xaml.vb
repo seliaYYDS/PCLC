@@ -318,14 +318,28 @@ Public Class AgentMascot
         If Entry.Raw.Length = 0 Then
             Entry.Host.Children.Add(BuildHintText("思考中…", 12))
         Else
-            Dim Previous As Integer = Entry.RenderedBlocks
-            Dim Index As Integer = 0
-            For Each Block In ParseMarkdown(Entry.Raw.ToString())
-                Entry.Host.Children.Add(Block)
-                If Index >= Previous Then AnimateBlockAppear(Block)
-                Index += 1
-            Next
-            Entry.RenderedBlocks = Index
+            Dim Blocks As List(Of UIElement) = ParseMarkdown(Entry.Raw.ToString())
+            Dim OldCount As Integer = Entry.Host.Children.Count
+            If OldCount = 0 Then
+                For Each Block In Blocks
+                    Entry.Host.Children.Add(Block)
+                    AnimateBlockAppear(Block)
+                Next
+            ElseIf Blocks.Count >= OldCount Then
+                '只替换最后一个块（流式增长通常只影响它），其余保持不动
+                Entry.Host.Children(OldCount - 1) = Blocks(OldCount - 1)
+                For Index As Integer = OldCount To Blocks.Count - 1
+                    Entry.Host.Children.Add(Blocks(Index))
+                    AnimateBlockAppear(Blocks(Index))
+                Next
+            Else
+                '块数减少，整体重建
+                Entry.Host.Children.Clear()
+                For Each Block In Blocks
+                    Entry.Host.Children.Add(Block)
+                Next
+            End If
+            Entry.RenderedBlocks = Blocks.Count
         End If
         For Each Note In Entry.Notes
             Entry.Host.Children.Add(BuildHintText(Note, 11))
@@ -568,15 +582,22 @@ Public Class AgentMascot
                 Exit For
             End If
         Next
-        If Topmost IsNot Nothing AndAlso Topmost.NeedScroll Then
-            Dim MaxOffset As Double = Math.Max(0, MeasureContent(Topmost) - Topmost.Box.Height)
-            If e.Delta > 0 AndAlso Topmost.ScrollOffset <= 0.5 Then
-                '已到顶部，继续上滚则交给隐藏逻辑
-            Else
-                Topmost.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, Topmost.ScrollOffset - e.Delta / 3.0))
-                Topmost.Shift.Y = -Topmost.ScrollOffset
-                e.Handled = True
-                Return
+        If Topmost IsNot Nothing Then
+            Dim ContentHeight As Double = MeasureContent(Topmost)
+            Dim Viewport As Double = If(Topmost.Box.ActualHeight > 0, Topmost.Box.ActualHeight, Topmost.Box.Height)
+            If Double.IsNaN(Viewport) Then Viewport = 0
+            If ContentHeight > Viewport + 0.5 AndAlso Viewport > 0 Then
+                Topmost.NeedScroll = True
+                Topmost.Box.ClipToBounds = True
+                Dim MaxOffset As Double = Math.Max(0, ContentHeight - Viewport)
+                If e.Delta > 0 AndAlso Topmost.ScrollOffset <= 0.5 Then
+                    ' 已到顶部，交给隐藏逻辑
+                Else
+                    Topmost.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, Topmost.ScrollOffset - e.Delta / 3.0))
+                    Topmost.Shift.Y = -Topmost.ScrollOffset
+                    e.Handled = True
+                    Return
+                End If
             End If
         End If
         If Entries.Count <= 1 Then Return
