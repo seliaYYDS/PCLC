@@ -167,7 +167,7 @@ Public Class AgentMascot
 
     Private Sub SquashMascot(Scale As Double)
         Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
-            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseOut}}
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
         MascotScale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim)
     End Sub
 
@@ -176,13 +176,15 @@ Public Class AgentMascot
         Target.BeginAnimation(UIElement.OpacityProperty, Nothing)
         Target.Opacity = 0
         Dim Anim As New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
-            .BeginTime = TimeSpan.FromMilliseconds(Delay)}
+            .BeginTime = TimeSpan.FromMilliseconds(Delay),
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
         Target.BeginAnimation(UIElement.OpacityProperty, Anim)
     End Sub
 
     Private Sub FadeOut(Target As UIElement, Milliseconds As Integer, OnDone As Action)
         If Target Is Nothing Then Return
-        Dim Anim As New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(Milliseconds)))
+        Dim Anim As New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
         If OnDone IsNot Nothing Then AddHandler Anim.Completed, Sub(s, e) OnDone()
         Target.BeginAnimation(UIElement.OpacityProperty, Anim)
     End Sub
@@ -300,7 +302,8 @@ Public Class AgentMascot
             Dim IsUser As Boolean = If(Index < MessageIsUser.Count, MessageIsUser(Index), False)
             Canvas.SetLeft(Box, If(IsUser, BaseX + (320 - Width), BaseX))
             If Animate Then
-                Box.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Bottom, New Duration(TimeSpan.FromMilliseconds(150))))
+                Box.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Bottom, New Duration(TimeSpan.FromMilliseconds(150))) With {
+                    .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}})
             Else
                 Box.BeginAnimation(Canvas.TopProperty, Nothing)
                 Canvas.SetTop(Box, Bottom)
@@ -437,7 +440,7 @@ Public Class AgentMascot
             Dim Sway As New DoubleAnimation(Amplitude, -Amplitude, New Duration(TimeSpan.FromSeconds(Seconds))) With {
                 .AutoReverse = True,
                 .RepeatBehavior = RepeatBehavior.Forever,
-                .EasingFunction = New SineEase With {.EasingMode = EasingMode.EaseInOut},
+                .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut},
                 .BeginTime = TimeSpan.FromMilliseconds(New Random().Next(0, 1500))}
             SwayTransform.BeginAnimation(TranslateTransform.XProperty, Sway)
         Catch
