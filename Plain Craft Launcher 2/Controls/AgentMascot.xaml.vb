@@ -69,7 +69,7 @@ Public Class AgentMascot
     End Sub
 
     '气泡跟随：定时插值，避免每帧重启动画造成卡顿
-    Private ReadOnly FollowTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
+    Private WithEvents FollowTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
     Private TargetLeft As Double = -1
     Private TargetTop As Double = -1
     Private HasPosition As Boolean = False
@@ -93,7 +93,7 @@ Public Class AgentMascot
         TargetTop = Math.Max(8, BubbleTop)
     End Sub
 
-    Private Sub FollowTimer_Tick(sender As Object, e As EventArgs)
+    Private Sub FollowTimer_Tick(sender As Object, e As EventArgs) Handles FollowTimer.Tick
         If PanBubble Is Nothing OrElse PanBubble.Visibility <> Visibility.Visible Then Return
         If TargetLeft < 0 Then Return
         If Not HasPosition Then

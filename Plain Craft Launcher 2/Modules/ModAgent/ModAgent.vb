@@ -138,7 +138,7 @@ Public Class ModAgent
             Case 1
                 Return Policy = 0
             Case Else
-                If Policy = 2 AndAlso Confirmed.Contains(Tool.Name) Then Return False
+                If Policy = 2 Then Return False
                 Return True
         End Select
     End Function

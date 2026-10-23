@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PCL"
         Background="{x:Null}">
-    <Border x:Name="PanBubble" Width="380" MaxHeight="470" Visibility="Collapsed"
+    <Border x:Name="PanBubble" Width="380" MaxHeight="560" Visibility="Collapsed"
             HorizontalAlignment="Left" VerticalAlignment="Top" Background="{x:Null}" BorderThickness="0">
         <Grid>
             <Grid.RowDefinitions>
@@ -13,7 +13,7 @@
             </Grid.RowDefinitions>
 
             <ScrollViewer x:Name="PanScroll" Grid.Row="0" VerticalScrollBarVisibility="Hidden"
-                          HorizontalScrollBarVisibility="Disabled" Padding="4,4,4,4">
+                          HorizontalScrollBarVisibility="Disabled" Padding="12,8,12,8">
                 <StackPanel x:Name="PanMessages"/>
             </ScrollViewer>
 
