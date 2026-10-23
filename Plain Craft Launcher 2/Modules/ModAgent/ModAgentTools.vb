@@ -116,6 +116,22 @@ Public Module ModAgentTools
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
 
+        '为现有实例安装/更换加载器
+        Dim ModifySchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"name", New JObject From {{"type", "string"}, {"description", "版本名称，默认当前选中版本"}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "forge/fabric/neoforge"}}},
+                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "加载器版本，默认推荐版/稳定版"}}}
+            }},
+            {"required", New JArray From {"loader"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "modify_instance_loader",
+            .Description = "为已安装的版本添加或更换 Forge/Fabric/NeoForge 加载器（保留 Mod 与配置）",
+            .Risk = 2,
+            .Schema = ModifySchema,
+            .Run = Function(Args) ModifyInstanceLoader(Args)})
         '删除实例
         Dim DelSchema As New JObject From {
             {"type", "object"},
@@ -205,6 +221,12 @@ Public Module ModAgentTools
                     Return "访问网页：" & Args("url")?.ToString()
                 Case "read_log"
                     Return "读取启动器日志"
+                Case "modify_instance_loader"
+                    Return "为版本添加加载器：" & Args("loader")?.ToString() & If(Args("name") Is Nothing, "", "（" & Args("name").ToString() & "）")
+                Case "install_modpack"
+                    Return "安装整合包：" & Args("name")?.ToString()
+                Case "list_worlds"
+                    Return "列出存档"
                 Case "search_content"
                     Return "搜索资源：" & If(Args("query") Is Nothing, "（全部）", Args("query").ToString()) & "（" & If(Args("type") Is Nothing, "mod", Args("type").ToString()) & "）"
                 Case "list_content_versions"
@@ -414,6 +436,97 @@ Public Module ModAgentTools
         If Success Then Return "已开始安装 " & Name & "，可在任务列表查看进度"
         Return "启动安装失败。可能原因：版本列表获取失败、磁盘空间不足或网络异常；" &
                "可以让用户稍后重试，或在 设置 → 启动器 → 日志 中查看具体错误。"
+    End Function
+    Private Function ModifyInstanceLoader(Args As JObject) As String
+        Dim Loader As String = Args("loader")?.ToString().ToLower()
+        If String.IsNullOrWhiteSpace(Loader) Then Return "缺少 loader 参数"
+        Dim Name As String = Args("name")?.ToString()
+        Dim Target As McInstance = Nothing
+        If String.IsNullOrWhiteSpace(Name) Then
+            Target = McInstanceSelected
+        Else
+            For Each Pair In McInstanceList
+                For Each Item In Pair.Value
+                    If String.Equals(Item.Name, Name, StringComparison.OrdinalIgnoreCase) Then Target = Item
+                Next
+            Next
+        End If
+        If Target Is Nothing Then Return "没有找到版本" & If(String.IsNullOrWhiteSpace(Name), "", "：" & Name)
+        If McInstanceLock.IsLocked(Target) Then Return "该版本正在被修改，请稍后再试"
+        Dim Info = Target.Version
+        If Info Is Nothing OrElse Info.VanillaName = "Unknown" Then Return "无法确定该版本的 Minecraft 版本，无法修改"
+        Dim Want As String = If(Args("loaderVersion") Is Nothing, "", Args("loaderVersion").ToString())
+        Dim Comps As New McComponents(Info.VanillaName, Info.ModLoaderVersions)
+        Dim ForgeEntry As DlForgeVersionEntry = Nothing
+        Dim NeoEntry As DlNeoForgeListEntry = Nothing
+        Dim FabricApiEntry As ResourceVersion = Nothing
+        Select Case Loader
+            Case "forge"
+                ForgeEntry = PickForgeVersion(Info.VanillaName, Want)
+                If ForgeEntry Is Nothing Then Return "没有找到适用于 " & Info.VanillaName & " 的 Forge 版本"
+                Comps.ModLoaderVersions(ModLoaders.Forge) = ForgeEntry.VersionName
+            Case "neoforge"
+                NeoEntry = PickNeoForgeVersion(Info.VanillaName, Want)
+                If NeoEntry Is Nothing Then Return "没有找到适用于 " & Info.VanillaName & " 的 NeoForge 版本"
+                Comps.ModLoaderVersions(ModLoaders.NeoForge) = NeoEntry.VersionName
+            Case "fabric"
+                If DlFabricListLoader.State <> LoadState.Finished Then
+                    DlFabricListLoader.Start(0)
+                    DlFabricListLoader.WaitForExit(60000)
+                End If
+                If DlFabricListLoader.State <> LoadState.Finished Then Return "获取 Fabric 版本列表失败"
+                Dim Loaders As JArray = TryCast(DlFabricListLoader.Output.Value("loader"), JArray)
+                If Loaders Is Nothing OrElse Loaders.Count = 0 Then Return "获取 Fabric 版本列表失败"
+                Dim Chosen As String = Nothing
+                If Want <> "" Then
+                    For Each Item In Loaders
+                        If Item("version").ToString() = Want Then Chosen = Want
+                    Next
+                Else
+                    For Each Item In Loaders
+                        If Item("stable") IsNot Nothing AndAlso Item("stable").ToString().ToLower() = "true" Then Chosen = Item("version").ToString() : Exit For
+                    Next
+                    If Chosen Is Nothing Then Chosen = Loaders(0)("version").ToString()
+                End If
+                If Chosen Is Nothing Then Return "未找到指定的 Fabric 版本：" & Want
+                Comps.ModLoaderVersions(ModLoaders.Fabric) = Chosen
+                Try
+                    If DlFabricApiLoader.State <> LoadState.Finished Then
+                        DlFabricApiLoader.Start(0)
+                        DlFabricApiLoader.WaitForExit(60000)
+                    End If
+                    If DlFabricApiLoader.State = LoadState.Finished AndAlso DlFabricApiLoader.Output IsNot Nothing Then
+                        For Each Item In DlFabricApiLoader.Output
+                            If Item.GameVersions IsNot Nothing AndAlso Item.GameVersions.Contains(Info.VanillaName) Then
+                                If FabricApiEntry Is Nothing OrElse Item.ReleaseType = ResourceVersion.ReleaseTypes.Release Then FabricApiEntry = Item
+                            End If
+                        Next
+                    End If
+                Catch
+                End Try
+            Case Else
+                Return "不支持的加载器：" & Loader
+        End Select
+        Dim Success As Boolean = False
+        Dim Done As New Threading.ManualResetEvent(False)
+        RunInUi(Sub()
+                   Try
+                       Dim Request As New McInstallRequest With {
+                           .InstanceFolder = Target.PathVersion,
+                           .Components = Comps,
+                           .ForgeEntry = ForgeEntry,
+                           .NeoForgeEntry = NeoEntry,
+                           .FabricApi = FabricApiEntry
+                       }
+                       Success = McModificationStart(Request, Target)
+                   Catch
+                   Finally
+                       Done.Set()
+                   End Try
+               End Sub)
+        Done.WaitOne(20000)
+        If Success Then Return "已开始为 " & Target.Name & " 安装 " & Loader & "，可在任务管理器查看进度"
+        Return "启动修改失败，请查看日志或在下载页手动修改"
     End Function
     Private Function PickForgeVersion(McVersion As String, Want As String) As DlForgeVersionEntry
         Try

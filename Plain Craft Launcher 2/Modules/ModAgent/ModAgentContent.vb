@@ -17,7 +17,9 @@ Public Module ModAgentContent
                 {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack/modpack，默认 mod"}}},
                 {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本，如 1.20.1"}}},
                 {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器：fabric/forge/neoforge/quilt，仅对 mod 有效"}}},
-                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10，最多 30"}}}
+                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10，最多 30"}}},
+                {"offset", New JObject From {{"type", "integer"}, {"description", "跳过前多少条，用于翻页"}}},
+                {"sort", New JObject From {{"type", "string"}, {"description", "排序：relevance/downloads/newest/updated，默认 relevance"}}}
             }}
         }
         List.Add(New AgentTool With {
@@ -77,6 +79,27 @@ Public Module ModAgentContent
             .Schema = DeleteSchema,
             .Run = Function(Args) DeleteContent(Args)})
 
+        Dim PackSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"url", New JObject From {{"type", "string"}, {"description", "整合包文件下载地址（.mrpack/.zip）"}}},
+                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称"}}}
+            }},
+            {"required", New JArray From {"url", "name"}}
+        }
+        List.Add(New AgentTool With {
+            .Name = "install_modpack",
+            .Description = "下载整合包并安装为一个新版本（自动处理加载器、模组与配置）",
+            .Risk = 2,
+            .Schema = PackSchema,
+            .Run = Function(Args) InstallModpack(Args)})
+
+        List.Add(New AgentTool With {
+            .Name = "list_worlds",
+            .Description = "列出当前版本目录下的存档，用于数据包安装",
+            .Risk = 0,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) ListWorlds()})
         Dim ListInstalledSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
@@ -143,13 +166,15 @@ Public Module ModAgentContent
             Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
             Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
             Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+            Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
+            Dim Sort As String = If(Args("sort") Is Nothing, "relevance", Args("sort").ToString())
 
             Dim Facets As New JArray()
             Facets.Add(New JArray From {"project_type:" & TypeToProjectType(Type)})
             If GameVersion <> "" Then Facets.Add(New JArray From {"versions:" & GameVersion})
             If Loader <> "" AndAlso TypeToProjectType(Type) = "mod" Then Facets.Add(New JArray From {"categories:" & Loader.ToLower()})
 
-            Dim Url As String = ModrinthApi & "search?limit=" & Limit & "&index=relevance" &
+            Dim Url As String = ModrinthApi & "search?limit=" & Limit & "&offset=" & Offset & "&index=" & Uri.EscapeDataString(Sort) &
                                 "&query=" & Uri.EscapeDataString(Query) &
                                 "&facets=" & Uri.EscapeDataString(Facets.ToString(Newtonsoft.Json.Formatting.None))
             Dim Json As JToken = GetJson(Url)
@@ -166,7 +191,8 @@ Public Module ModAgentContent
                     {"versions", Hit("versions")}
                 })
             Next
-            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+            Dim Wrapper As New JObject From {{"total", Json("total_hits")}, {"offset", Offset}, {"hits", Result}}
+            Return Wrapper.ToString(Newtonsoft.Json.Formatting.Indented)
         Catch ex As Exception
             Return "搜索失败：" & ex.Message
         End Try
@@ -225,22 +251,65 @@ Public Module ModAgentContent
             Dim Target As String = IO.Path.Combine(Folder, FileName)
             If IO.File.Exists(Target) Then Return "文件已存在：" & FileName
 
-            Dim Request As HttpWebRequest = CType(WebRequest.Create(Url), HttpWebRequest)
-            Request.UserAgent = UserAgent
-            Request.Timeout = 60000
-            Using Response = CType(Request.GetResponse(), HttpWebResponse)
-                Using Input = Response.GetResponseStream()
-                    Using Output = IO.File.Create(Target)
-                        Input.CopyTo(Output)
-                    End Using
-                End Using
-            End Using
+            DownloadFile(Url, Target)
             Return "已安装到 " & Target & "（" & New IO.FileInfo(Target).Length & " 字节）"
         Catch ex As Exception
             Return "安装失败：" & ex.Message
         End Try
     End Function
 
+    Private Sub DownloadFile(Url As String, Target As String)
+        Dim Request As HttpWebRequest = CType(WebRequest.Create(Url), HttpWebRequest)
+        Request.UserAgent = UserAgent
+        Request.Timeout = 120000
+        Request.ReadWriteTimeout = 120000
+        Using Response = CType(Request.GetResponse(), HttpWebResponse)
+            Using Input = Response.GetResponseStream()
+                Using Output = IO.File.Create(Target)
+                    Input.CopyTo(Output)
+                End Using
+            End Using
+        End Using
+    End Sub
+
+    Private Function InstallModpack(Args As JObject) As String
+        Try
+            Dim Url As String = Args("url")?.ToString()
+            Dim Name As String = Args("name")?.ToString()
+            If String.IsNullOrWhiteSpace(Url) OrElse String.IsNullOrWhiteSpace(Name) Then Return "缺少 url 或 name 参数"
+            Name = Name.Trim()
+            If Name.IndexOfAny(IO.Path.GetInvalidFileNameChars()) >= 0 Then Return "版本名称包含非法字符"
+            If IO.Directory.Exists(McFolderSelected & "versions\" & Name & "") Then Return "版本已存在：" & Name
+            Dim Extension As String = If(Url.ToLower().EndsWith(".zip"), ".zip", ".mrpack")
+            Dim Temp As String = IO.Path.Combine(IO.Path.GetTempPath(), "PCLC_pack_" & Guid.NewGuid().ToString("N") & Extension)
+            DownloadFile(Url, Temp)
+            Dim Loader = ModpackInstall(Temp, Name)
+            If Loader Is Nothing Then Return "解析整合包失败，可能该文件不是受支持的整合包格式"
+            Loader.Start(McFolderSelected & "versions\" & Name & "")
+            LoaderTaskbarAdd(Loader)
+            RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.TaskManager))
+            Return "已开始安装整合包 " & Name & "，可在任务管理器中查看进度"
+        Catch ex As Exception
+            Return "整合包安装失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ListWorlds() As String
+        Try
+            Dim Base As String = McFolderSelected
+            Dim Instance = McInstanceSelected
+            If Instance IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Instance.PathIndie) Then Base = Instance.PathIndie
+            Dim Saves As String = IO.Path.Combine(Base, "saves")
+            If Not IO.Directory.Exists(Saves) Then Return "当前没有存档目录"
+            Dim Items As New JArray()
+            For Each Folder In IO.Directory.GetDirectories(Saves)
+                Items.Add(IO.Path.GetFileName(Folder))
+            Next
+            Return Items.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "读取存档失败：" & ex.Message
+        End Try
+    End Function
     Private Function DeleteContent(Args As JObject) As String
         Try
             Dim FileName As String = Args("fileName")?.ToString()
