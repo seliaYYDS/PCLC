@@ -37,6 +37,7 @@ Public Class PageSetupUI
             SettingService.RefreshSettings(Me)
             BackgroundRefresh(False, False)
             RefreshPickers()
+            RefreshCustomColorVisibility()
 
             '标题栏
             CheckLogoLeft.Visibility = If(RadioLogoType0.Checked, Visibility.Visible, Visibility.Collapsed)
@@ -602,9 +603,17 @@ Refresh:
     End Sub
 
     '切换主题时同步两个取色器（延后到设置写入之后）
-    Private Sub ThemeRadio_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme0.Changed, RadioLauncherTheme1.Changed, RadioLauncherTheme2.Changed, RadioLauncherTheme3.Changed, RadioLauncherTheme4.Changed, RadioLauncherTheme5.Changed, RadioLauncherTheme6.Changed, RadioLauncherTheme7.Changed, RadioLauncherTheme8.Changed, RadioLauncherTheme9.Changed, RadioLauncherTheme10.Changed, RadioLauncherTheme11.Changed, RadioLauncherTheme12.Changed, RadioLauncherTheme13.Changed, RadioLauncherTheme14.Changed, RadioLauncherTheme15.Changed
+    '彩虹配色不需要调色盘
+    Private Sub RefreshCustomColorVisibility()
+        If PanCustomColor Is Nothing Then Return
+        PanCustomColor.Visibility = If(Settings.Get(Of Integer)("UiLauncherTheme") = 16, Visibility.Collapsed, Visibility.Visible)
+    End Sub
+    Private Sub ThemeRadio_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme0.Changed, RadioLauncherTheme1.Changed, RadioLauncherTheme2.Changed, RadioLauncherTheme3.Changed, RadioLauncherTheme4.Changed, RadioLauncherTheme5.Changed, RadioLauncherTheme6.Changed, RadioLauncherTheme7.Changed, RadioLauncherTheme8.Changed, RadioLauncherTheme9.Changed, RadioLauncherTheme10.Changed, RadioLauncherTheme11.Changed, RadioLauncherTheme12.Changed, RadioLauncherTheme13.Changed, RadioLauncherTheme14.Changed, RadioLauncherTheme15.Changed, RadioLauncherTheme16.Changed
         If AniControlEnabled <> 0 Then Return
-        Dispatcher.BeginInvoke(New Action(Sub() RefreshPickers()))
+        Dispatcher.BeginInvoke(New Action(Sub()
+                                             RefreshPickers()
+                                             RefreshCustomColorVisibility()
+                                         End Sub))
     End Sub
     '滑动条
     Private Sub SliderLoad()

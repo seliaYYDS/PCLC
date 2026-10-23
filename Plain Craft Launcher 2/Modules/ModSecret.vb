@@ -5,6 +5,29 @@ Friend Module ModSecret
     '标注 PCL 的不同分支，仅用于替换标记
     Public Const VersionBranchMain As String = "OpenSource"
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
+    '彩虹配色
+    Public RainbowMode As Boolean = False
+    Private RainbowTimer As Windows.Threading.DispatcherTimer
+
+    Private Sub StartRainbow()
+        If RainbowTimer Is Nothing Then
+            RainbowTimer = New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(60)}
+            AddHandler RainbowTimer.Tick,
+                Sub(sender, args)
+                    If Not RainbowMode Then Return
+                    ColorHue = (ColorHue + 5) Mod 360
+                    ColorHue2 = (ColorHue + 80) Mod 360
+                    ColorSat = 72
+                    ColorSat2 = 72
+                    ApplyThemeColors()
+                    ThemeRefreshMain()
+                End Sub
+        End If
+        RainbowTimer.Start()
+    End Sub
+    Private Sub StopRainbow()
+        If RainbowTimer IsNot Nothing Then RainbowTimer.Stop()
+    End Sub
     Public Const RegFolder As String = "PCLDebug"
     '用于微软登录的 ClientId。默认使用 Minecraft 官方启动器公开的 Live 应用 ID，无需自行注册 Azure 应用
     Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "00000000402b5328")
@@ -146,23 +169,8 @@ Friend Module ModSecret
         Return True
     End Function
 
-    Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
-        Try
-            If ThemeNow = NewTheme AndAlso NewTheme >= 0 Then Return
-            If NewTheme >= 0 Then
-                ThemeNow = NewTheme
-                Dim H1 As Integer, S1 As Integer, L1 As Integer
-                Dim H2 As Integer, S2 As Integer, L2 As Integer
-                If GetThemeColors(NewTheme, H1, S1, L1, H2, S2, L2) Then
-                    ColorHue = H1
-                    ColorSat = S1
-                    ColorLightAdjust = L1 - 45
-                    ColorHue2 = H2
-                    ColorSat2 = S2
-                    ColorLightAdjust2 = L2 - 48
-                End If
-            End If
-
+    ''' <summary>按当前 ColorHue 等参数重算全部颜色资源。</summary>
+    Private Sub ApplyThemeColors()
             '主色阶
             Color1 = New MyColor().FromHSL2(ColorHue, ColorSat * 0.2, 25 + ColorLightAdjust * 0.3)
             Color2 = New MyColor().FromHSL2(ColorHue, ColorSat, 45 + ColorLightAdjust)
@@ -197,6 +205,33 @@ Friend Module ModSecret
             Application.Current.Resources("ColorObject8") = CType(Color8, Color)
             Application.Current.Resources("ColorObjectBg0") = CType(ColorBg0, Color)
             Application.Current.Resources("ColorObjectBg1") = CType(ColorBg1, Color)
+    End Sub
+
+    Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
+        Try
+            If ThemeNow = NewTheme AndAlso NewTheme >= 0 Then Return
+            If NewTheme = 16 Then
+                RainbowMode = True
+                StartRainbow()
+            ElseIf NewTheme >= 0 Then
+                RainbowMode = False
+                StopRainbow()
+            End If
+            If NewTheme >= 0 Then
+                ThemeNow = NewTheme
+                Dim H1 As Integer, S1 As Integer, L1 As Integer
+                Dim H2 As Integer, S2 As Integer, L2 As Integer
+                If NewTheme <> 16 AndAlso GetThemeColors(NewTheme, H1, S1, L1, H2, S2, L2) Then
+                    ColorHue = H1
+                    ColorSat = S1
+                    ColorLightAdjust = L1 - 45
+                    ColorHue2 = H2
+                    ColorSat2 = S2
+                    ColorLightAdjust2 = L2 - 48
+                End If
+            End If
+
+            ApplyThemeColors()
             ThemeRefreshMain()
         Catch ex As Exception
             Logger.Error(ex, "刷新主题颜色失败", LogBehavior.Toast)
@@ -221,6 +256,7 @@ Friend Module ModSecret
                     FrmMain.PanTitle.Background = Brush
             End Select
             FrmMain.PanTitle.Background.Freeze()
+            FrmMain.RefreshSideBarBackground()
             '主页面背景
             If Settings.Get(Of Boolean)("UiBackgroundColorful") Then
                 Brush = New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}

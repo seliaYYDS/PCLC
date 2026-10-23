@@ -853,6 +853,12 @@ Public Class FormMain
         End If
     End Sub
 
+    ''' <summary>主题或标题栏样式变化后，刷新侧边标题栏的背景。</summary>
+    Public Sub RefreshSideBarBackground()
+        If SideBar Is Nothing Then Return
+        SideBar.Background = MakeVerticalTitleBrush()
+    End Sub
+
     '把横向的标题栏渐变转成纵向，供侧边栏使用
     Private Shared Function MakeVerticalTitleBrush() As Brush
         Try
