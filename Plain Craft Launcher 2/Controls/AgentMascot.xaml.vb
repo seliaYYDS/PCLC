@@ -120,8 +120,8 @@ Public Class AgentMascot
             If Group IsNot Nothing AndAlso Group.Children.Count > 0 Then
                 Dim Follow As TranslateTransform = TryCast(Group.Children(0), TranslateTransform)
                 If Follow IsNot Nothing Then
-                    Follow.X = OffsetX - LagX(Index)
-                    Follow.Y = OffsetY - LagY(Index)
+                    Follow.X = LagX(Index)
+                    Follow.Y = LagY(Index)
                 End If
             End If
         Next
