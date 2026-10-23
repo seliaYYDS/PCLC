@@ -873,6 +873,11 @@ Public Class FormMain
         End Try
     End Function
     ''' <summary>实际的布局切换。</summary>
+    ''' <summary>按设置刷新 AI 助手显示状态。</summary>
+    Public Shared Sub RefreshAgentState()
+        If FrmMain Is Nothing OrElse FrmMain.FrmAgent Is Nothing Then Return
+        FrmMain.FrmAgent.RefreshState()
+    End Sub
     Public Sub ApplyTitleBarLayout()
         Try
             Dim Position As Integer = Settings.Get(Of Integer)("UiTitleBarPosition")
@@ -892,7 +897,7 @@ Public Class FormMain
                 Dim TitleRow As Integer = If(Position = 3, 1, 0)
                 Dim ContentRow As Integer = If(Position = 3, 0, 1)
                 For Each Child As UIElement In PanForm.Children
-                    If Child Is PanTitle Then Continue For
+                    If Child Is PanTitle OrElse Child Is FrmAgent Then Continue For
                     Grid.SetRow(Child, ContentRow)
                     Grid.SetColumn(Child, 0)
                     Dim Element = TryCast(Child, FrameworkElement)

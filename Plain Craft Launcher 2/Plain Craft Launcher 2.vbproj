@@ -206,6 +206,11 @@
     <Compile Include="Controls\MyComboBoxItem.vb" />
     <Compile Include="Controls\MyCard.vb" />
     <Compile Include="Controls\MyColorPicker.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentProviders.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentTools.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentWeb.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentLlm.vb" />
+    <Compile Include="Modules\ModAgent\ModAgent.vb" />
     <Compile Include="Controls\MyExtraTextButton.xaml.vb">
       <DependentUpon>MyExtraTextButton.xaml</DependentUpon>
     </Compile>
@@ -468,6 +473,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Controls\AgentMascot.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="FormMain.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -500,6 +509,9 @@
     </Compile>
     <Compile Include="Controls\MyRadioButton.xaml.vb">
       <DependentUpon>MyRadioButton.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\AgentMascot.xaml.vb">
+      <DependentUpon>AgentMascot.xaml</DependentUpon>
     </Compile>
     <Compile Include="FormMain.xaml.vb">
       <DependentUpon>FormMain.xaml</DependentUpon>
@@ -762,6 +774,11 @@
   <ItemGroup>
     <Resource Include="Images\icon.ico" />
     <Resource Include="Images\Splash.png" />
+    <Resource Include="Images\Celia\celia_shy.png" />
+    <Resource Include="Images\Celia\celia_angry.png" />
+    <Resource Include="Images\Celia\celia_confused.png" />
+    <Resource Include="Images\Celia\celia_happy.png" />
+    <Resource Include="Images\Celia\celia_normal.png" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\Font.ttf" />

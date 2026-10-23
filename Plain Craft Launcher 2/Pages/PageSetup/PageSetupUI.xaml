@@ -101,8 +101,66 @@
                             </StackPanel>
                         </Grid>
                         <local:MyCheckBox local:SettingService.Key="UiLauncherLogo" Text="打开启动器时显示 PCLC 图标" Margin="-1,0,0,1" Height="22" />
+                        <local:MyCheckBox local:SettingService.Key="AgentEnabled" Text="启用 AI 助理「小瑟」" Margin="-1,8,0,1" Height="22" />
                     </StackPanel>
                 </Grid>
+            </local:MyCard>
+            <local:MyCard Margin="0,0,0,15" Title="AI 助理「小瑟」">
+                <StackPanel Margin="25,40,25,20">
+                    <Grid Height="28" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="提供商" Margin="0,0,25,0" />
+                        <local:MyComboBox Grid.Column="1" local:SettingService.Key="AgentProvider">
+                            <local:MyComboBoxItem local:SettingService.Value="openai" Content="OpenAI" />
+                            <local:MyComboBoxItem local:SettingService.Value="deepseek" Content="DeepSeek" />
+                            <local:MyComboBoxItem local:SettingService.Value="zhipu" Content="智谱 GLM" />
+                            <local:MyComboBoxItem local:SettingService.Value="moonshot" Content="月之暗面" />
+                            <local:MyComboBoxItem local:SettingService.Value="siliconflow" Content="硅基流动" />
+                            <local:MyComboBoxItem local:SettingService.Value="openrouter" Content="OpenRouter" />
+                            <local:MyComboBoxItem local:SettingService.Value="ollama" Content="Ollama（本地）" />
+                            <local:MyComboBoxItem local:SettingService.Value="custom" Content="自定义" />
+                        </local:MyComboBox>
+                    </Grid>
+                    <Grid Height="28" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="接口地址" Margin="0,0,25,0" />
+                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentBaseUrl" HintText="留空则使用提供商默认地址" />
+                    </Grid>
+                    <Grid Height="28" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="模型" Margin="0,0,25,0" />
+                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentModel" HintText="如 deepseek-chat，留空使用默认模型" />
+                    </Grid>
+                    <Grid Height="28" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="API Key" Margin="0,0,25,0" />
+                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentApiKey" HintText="仅保存在本机，不会上传" />
+                    </Grid>
+                    <Grid Height="28">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="安全策略" Margin="0,0,25,0" />
+                        <local:MyComboBox Grid.Column="1" local:SettingService.Key="AgentSafety">
+                            <local:MyComboBoxItem local:SettingService.Value="0" Content="严格：所有操作都需确认" />
+                            <local:MyComboBoxItem local:SettingService.Value="1" Content="标准：仅高风险操作需确认" />
+                            <local:MyComboBoxItem local:SettingService.Value="2" Content="宽松：同会话内首次确认后不再询问" />
+                        </local:MyComboBox>
+                    </Grid>
+                </StackPanel>
             </local:MyCard>
             <local:MyCard x:Name="CardBackground" Margin="0,0,0,15" Title="背景媒体">
                 <StackPanel Margin="25,40,25,20">
