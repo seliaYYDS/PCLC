@@ -567,7 +567,7 @@ Public Class AgentMascot
                     .Child = Cell,
                     .BorderBrush = New MyColor(228, 231, 240),
                     .BorderThickness = New Thickness(0, 0, If(C = Columns - 1, 0, 1), If(R = Rows.Count - 1, 0, 1)),
-                    .Background = If(R = 0, New MyColor(246, 247, 251), Brushes.Transparent)}
+                    .Background = If(R = 0, CType(New MyColor(246, 247, 251), Brush), Brushes.Transparent)}
                 Grid.SetRow(Holder, R)
                 Grid.SetColumn(Holder, C)
                 Grid.Children.Add(Holder)
