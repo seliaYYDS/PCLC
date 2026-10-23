@@ -32,7 +32,7 @@
         </Grid>
     </Border>
 
-    <Image x:Name="ImgMascot" Width="140" Height="140" Cursor="Hand" Stretch="Uniform"
+    <Image x:Name="ImgMascot" Width="140" Height="140" Cursor="Hand" Stretch="Uniform" RenderTransformOrigin="0.5,1"
            RenderOptions.BitmapScalingMode="HighQuality">
         <Image.RenderTransform>
             <TranslateTransform x:Name="TransMascot"/>

@@ -10,6 +10,8 @@ Public Class AgentMascot
 
     Private ReadOnly Messages As New List(Of Border)
     Private ReadOnly MessageIsUser As New List(Of Boolean)
+    Private ReadOnly MascotScale As New ScaleTransform(1, 1)
+    Private ReadOnly WheelCatcher As New Border()
     Private HiddenNewest As Integer = 0
 
     Private AnchorX As Double = 0
@@ -45,6 +47,14 @@ Public Class AgentMascot
         AddHandler Me.Loaded, Sub() RefreshState()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
         AddSway(PanInput, 3.0, 3.0)
+        Dim MascotGroup As New TransformGroup()
+        MascotGroup.Children.Add(TransMascot)
+        MascotGroup.Children.Add(MascotScale)
+        ImgMascot.RenderTransform = MascotGroup
+        WheelCatcher.Background = Brushes.Transparent
+        AddHandler WheelCatcher.PreviewMouseWheel, AddressOf OnWheel
+        Panel.SetZIndex(WheelCatcher, -1)
+        PanMessageLayer.Children.Add(WheelCatcher)
     End Sub
 
     Public Sub RefreshState()
@@ -155,10 +165,32 @@ Public Class AgentMascot
         Next
     End Sub
 
+    Private Sub SquashMascot(Scale As Double)
+        Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseOut}}
+        MascotScale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim)
+    End Sub
+
+    Private Sub FadeIn(Target As UIElement, Milliseconds As Integer, Delay As Integer)
+        If Target Is Nothing Then Return
+        Target.BeginAnimation(UIElement.OpacityProperty, Nothing)
+        Target.Opacity = 0
+        Dim Anim As New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
+            .BeginTime = TimeSpan.FromMilliseconds(Delay)}
+        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
+    End Sub
+
+    Private Sub FadeOut(Target As UIElement, Milliseconds As Integer, OnDone As Action)
+        If Target Is Nothing Then Return
+        Dim Anim As New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(Milliseconds)))
+        If OnDone IsNot Nothing Then AddHandler Anim.Completed, Sub(s, e) OnDone()
+        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
+    End Sub
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
         DragStart = e.GetPosition(Me)
         DragOffset = New Point(Canvas.GetLeft(ImgMascot), Canvas.GetTop(ImgMascot))
         IsDragging = False
+        SquashMascot(0.9)
         ImgMascot.CaptureMouse()
     End Sub
 
@@ -178,6 +210,7 @@ Public Class AgentMascot
 
     Private Sub Mascot_MouseUp(sender As Object, e As MouseButtonEventArgs)
         ImgMascot.ReleaseMouseCapture()
+        SquashMascot(1)
         If IsDragging Then
             Settings.Set("AgentPosX", CInt(Canvas.GetLeft(ImgMascot)))
             Settings.Set("AgentPosY", CInt(Canvas.GetTop(ImgMascot)))
@@ -211,13 +244,22 @@ Public Class AgentMascot
         End If
         LayoutMessages()
         StartFollow()
+        FadeIn(PanInput, 150, 0)
+        For Index As Integer = 0 To Messages.Count - 1
+            FadeIn(Messages(Index), 160, Math.Min(Index, 6) * 25)
+        Next
         TxtInput.Focus()
     End Sub
 
     Private Sub HideBubble()
-        PanInput.Visibility = Visibility.Collapsed
-        PanMessageLayer.Visibility = Visibility.Collapsed
         StopFollow()
+        For Index As Integer = 0 To Messages.Count - 1
+            FadeOut(Messages(Index), 100, Nothing)
+        Next
+        FadeOut(PanInput, 100, Sub()
+                                  PanInput.Visibility = Visibility.Collapsed
+                                  PanMessageLayer.Visibility = Visibility.Collapsed
+                              End Sub)
     End Sub
 
     Private Function AddBubble(Text As String, IsUser As Boolean) As TextBlock
@@ -241,7 +283,7 @@ Public Class AgentMascot
         Return Content
     End Function
 
-    Private Sub LayoutMessages()
+    Private Sub LayoutMessages(Optional Animate As Boolean = False)
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
         For Index As Integer = Messages.Count - 1 To 0 Step -1
@@ -257,13 +299,25 @@ Public Class AgentMascot
             Bottom -= Height
             Dim IsUser As Boolean = If(Index < MessageIsUser.Count, MessageIsUser(Index), False)
             Canvas.SetLeft(Box, If(IsUser, BaseX + (320 - Width), BaseX))
-            Canvas.SetTop(Box, Bottom)
+            If Animate Then
+                Box.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Bottom, New Duration(TimeSpan.FromMilliseconds(150))))
+            Else
+                Box.BeginAnimation(Canvas.TopProperty, Nothing)
+                Canvas.SetTop(Box, Bottom)
+            End If
             Bottom -= 6
         Next
         PanMessageLayer.Width = Math.Max(0, ActualWidth)
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
         Canvas.SetLeft(PanMessageLayer, 0)
         Canvas.SetTop(PanMessageLayer, 0)
+        '滚轮捕获层覆盖整块消息区域
+        Dim AreaTop As Double = Math.Min(Bottom, AnchorY - 8)
+        Dim AreaHeight As Double = Math.Max(0, (AnchorY - 8) - AreaTop)
+        WheelCatcher.Width = 320
+        WheelCatcher.Height = AreaHeight
+        Canvas.SetLeft(WheelCatcher, BaseX)
+        Canvas.SetTop(WheelCatcher, AreaTop)
     End Sub
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
@@ -274,12 +328,28 @@ Public Class AgentMascot
         Else
             HiddenNewest = Math.Max(0, HiddenNewest - 1)
         End If
-        LayoutMessages()
+        LayoutMessages(True)
         e.Handled = True
     End Sub
 
     Private Sub ClearMessages()
-        PanMessageLayer.Children.Clear()
+        Dim Pending As Integer = Messages.Count
+        If Pending = 0 Then
+            FinishClear()
+            Return
+        End If
+        For Each Box In Messages
+            FadeOut(Box, 120, Sub()
+                                      Pending -= 1
+                                      If Pending <= 0 Then FinishClear()
+                                  End Sub)
+        Next
+    End Sub
+
+    Private Sub FinishClear()
+        For Each Box In Messages
+            PanMessageLayer.Children.Remove(Box)
+        Next
         Messages.Clear()
         MessageIsUser.Clear()
         Samples.Clear()
