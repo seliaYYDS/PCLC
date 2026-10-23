@@ -7,6 +7,12 @@ Imports System.Windows.Media.Imaging
 ''' <summary>AI 助手「小瑟」：可拖拽人偶 + 独立浮动消息气泡（支持 Markdown）。</summary>
 Public Class AgentMascot
 
+    Friend Class AgentBlock
+        Public Kind As Integer
+        Public Text As String
+        Public Level As Integer
+    End Class
+
     Friend Class BubbleEntry
         Public Box As Border
         Public Host As StackPanel
@@ -304,9 +310,8 @@ Public Class AgentMascot
     End Function
 
     Private Sub RenderEntry(Entry As BubbleEntry)
-        Entry.Host.Children.Clear()
-        Entry.RenderedBlocks = 0
         If Entry.IsUser Then
+            Entry.Host.Children.Clear()
             Entry.Host.Children.Add(New TextBlock With {
                 .Text = Entry.Raw.ToString(),
                 .TextWrapping = TextWrapping.Wrap,
@@ -316,33 +321,21 @@ Public Class AgentMascot
             Return
         End If
         If Entry.Raw.Length = 0 Then
+            Entry.Host.Children.Clear()
             Entry.Host.Children.Add(BuildHintText("思考中…", 12))
-        Else
-            Dim Blocks As List(Of UIElement) = ParseMarkdown(Entry.Raw.ToString())
-            Dim OldCount As Integer = Entry.Host.Children.Count
-            If OldCount = 0 Then
-                For Each Block In Blocks
-                    Entry.Host.Children.Add(Block)
-                    AnimateBlockAppear(Block)
-                Next
-            ElseIf Blocks.Count >= OldCount Then
-                '只替换最后一个块（流式增长通常只影响它），其余保持不动
-                Entry.Host.Children(OldCount - 1) = Blocks(OldCount - 1)
-                For Index As Integer = OldCount To Blocks.Count - 1
-                    Entry.Host.Children.Add(Blocks(Index))
-                    AnimateBlockAppear(Blocks(Index))
-                Next
-            Else
-                '块数减少，整体重建
-                Entry.Host.Children.Clear()
-                For Each Block In Blocks
-                    Entry.Host.Children.Add(Block)
-                Next
-            End If
-            Entry.RenderedBlocks = Blocks.Count
+            Return
         End If
-        For Each Note In Entry.Notes
-            Entry.Host.Children.Add(BuildHintText(Note, 11))
+        Dim Models As List(Of AgentBlock) = ParseBlocks(Entry.Raw.ToString())
+        While Entry.Host.Children.Count > Models.Count
+            Entry.Host.Children.RemoveAt(Entry.Host.Children.Count - 1)
+        End While
+        For Index As Integer = 0 To Models.Count - 1
+            If Index >= Entry.Host.Children.Count Then
+                Dim Element As UIElement = CreateBlockElement(Models(Index))
+                Entry.Host.Children.Add(Element)
+                AnimateBlockAppear(Element)
+            End If
+            UpdateBlockElement(Entry.Host.Children(Index), Models(Index))
         Next
     End Sub
 
@@ -359,16 +352,15 @@ Public Class AgentMascot
         Catch
         End Try
     End Sub
-    Private Shared Function ParseMarkdown(Text As String) As List(Of UIElement)
-        Dim Result As New List(Of UIElement)
-        Dim Lines As String() = Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+    Private Shared Function ParseBlocks(Text As String) As List(Of AgentBlock)
+        Dim Result As New List(Of AgentBlock)
         Dim Code As New StringBuilder()
         Dim InCode As Boolean = False
         Dim Fence3 As String = New String(ChrW(96), 3)
-        For Each Line In Lines
+        For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
             If Line.TrimStart().StartsWith(Fence3) Then
                 If InCode Then
-                    Result.Add(BuildCodeBlock(Code.ToString()))
+                    Result.Add(New AgentBlock With {.Kind = 4, .Text = Code.ToString().TrimEnd()})
                     Code.Clear()
                 End If
                 InCode = Not InCode
@@ -380,57 +372,103 @@ Public Class AgentMascot
             End If
             If String.IsNullOrWhiteSpace(Line) Then Continue For
             Dim Trimmed As String = Line.TrimStart()
-            Dim Indent As Double = Line.Length - Trimmed.Length
+            Dim Indent As Integer = Line.Length - Trimmed.Length
             If Trimmed = "---" OrElse Trimmed = "***" Then
-                Result.Add(New Border With {.Height = 1, .Background = New MyColor(226, 229, 238), .Margin = New Thickness(0, 6, 0, 6)})
+                Result.Add(New AgentBlock With {.Kind = 5, .Text = ""})
                 Continue For
             End If
-            If Trimmed.StartsWith("|") Then
-                Dim Stripped As String = Trimmed.Replace("|", "").Replace("-", "").Trim()
-                If Stripped.Length = 0 Then Continue For
-                Dim Cells = Trimmed.Trim("|"c).Split("|"c)
-                Dim Row As New TextBlock With {
-                    .Text = String.Join("   ", Array.ConvertAll(Cells, Function(C) C.Trim())),
-                    .FontSize = 12,
-                    .Foreground = New MyColor(70, 74, 90),
-                    .TextWrapping = TextWrapping.Wrap,
-                    .Margin = New Thickness(0, 1, 0, 1)}
-                Result.Add(Row)
-                Continue For
-            End If
-            Dim Paragraph As New TextBlock With {
-                .TextWrapping = TextWrapping.Wrap,
-                .FontSize = 13,
-                .LineHeight = 20,
-                .Foreground = New MyColor(51, 51, 51),
-                .Margin = New Thickness(Math.Min(Indent * 4, 16), 1, 0, 1)}
-            If Trimmed.StartsWith(">") Then
-                Paragraph.Foreground = New MyColor(110, 116, 135)
-                Paragraph.Padding = New Thickness(8, 0, 0, 0)
-                AddInline(Paragraph, Trimmed.TrimStart(">"c).Trim())
-            ElseIf Trimmed.StartsWith("#") Then
+            If Trimmed.StartsWith("#") Then
                 Dim Level As Integer = 0
                 While Level < Trimmed.Length AndAlso Trimmed(Level) = "#"c
                     Level += 1
                 End While
-                Paragraph.FontSize = If(Level <= 1, 16, 14.5)
-                Paragraph.FontWeight = FontWeights.SemiBold
-                Paragraph.Margin = New Thickness(0, 5, 0, 2)
-                AddInline(Paragraph, Trimmed.TrimStart("#"c).Trim())
+                Result.Add(New AgentBlock With {.Kind = 1, .Level = Level, .Text = Trimmed.TrimStart("#"c).Trim()})
+            ElseIf Trimmed.StartsWith(">") Then
+                Result.Add(New AgentBlock With {.Kind = 3, .Text = Trimmed.TrimStart(">"c).Trim()})
             ElseIf Trimmed.StartsWith("- ") OrElse Trimmed.StartsWith("* ") Then
-                Paragraph.Margin = New Thickness(4 + Math.Min(Indent * 4, 16), 1, 0, 1)
-                AddInline(Paragraph, "• " & Trimmed.Substring(2))
-            ElseIf Regex.IsMatch(Trimmed, "^\d+\.\s") Then
-                Paragraph.Margin = New Thickness(4 + Math.Min(Indent * 4, 16), 1, 0, 1)
-                AddInline(Paragraph, Trimmed)
+                Result.Add(New AgentBlock With {.Kind = 2, .Text = "• " & Trimmed.Substring(2), .Level = Indent})
             Else
-                AddInline(Paragraph, Trimmed)
+                Result.Add(New AgentBlock With {.Kind = 0, .Text = Trimmed, .Level = Indent})
             End If
-            Result.Add(Paragraph)
         Next
-        If Code.Length > 0 Then Result.Add(BuildCodeBlock(Code.ToString()))
+        If Code.Length > 0 Then Result.Add(New AgentBlock With {.Kind = 4, .Text = Code.ToString().TrimEnd()})
         Return Result
     End Function
+
+    Private Shared Function CreateBlockElement(Model As AgentBlock) As UIElement
+        If Model.Kind = 4 Then
+            Return New Border With {
+                .Background = New MyColor(245, 246, 250),
+                .CornerRadius = New CornerRadius(4),
+                .Padding = New Thickness(8, 6, 8, 6),
+                .Margin = New Thickness(0, 3, 0, 3),
+                .Child = New TextBlock With {
+                    .Text = Model.Text,
+                    .FontFamily = New FontFamily("Consolas"),
+                    .FontSize = 12,
+                    .TextWrapping = TextWrapping.Wrap,
+                    .Foreground = New MyColor(60, 64, 80)}}
+        End If
+        If Model.Kind = 5 Then
+            Return New Border With {.Height = 1, .Background = New MyColor(226, 229, 238), .Margin = New Thickness(0, 6, 0, 6)}
+        End If
+        Dim Panel As New WrapPanel With {
+            .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 4, 16), Math.Min(Model.Level * 4, 16)), 1, 0, 1),
+            .HorizontalAlignment = HorizontalAlignment.Left}
+        Panel.Tag = 0
+        Return Panel
+    End Function
+
+    Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
+        Dim Panel As WrapPanel = TryCast(Element, WrapPanel)
+        If Panel Is Nothing Then Return
+        Dim Rendered As Integer = If(Panel.Tag Is Nothing, 0, CInt(Panel.Tag))
+        If Rendered >= Model.Text.Length Then Return
+        Dim Size As Double = If(Model.Kind = 1, If(Model.Level <= 1, 16.0, 14.5), 13.0)
+        Dim Weight As FontWeight = If(Model.Kind = 1, FontWeights.SemiBold, FontWeights.Normal)
+        Dim ForeColor As Color = CType(If(Model.Kind = 3, New MyColor(110, 116, 135), New MyColor(51, 51, 51)), Color)
+        Dim Index As Integer = Rendered
+        While Index < Model.Text.Length
+            Dim Length As Integer = NextUnit(Model.Text, Index)
+            Dim Piece As String = Model.Text.Substring(Index, Length)
+            Dim CharBlock As New TextBlock With {
+                .Text = Piece,
+                .FontSize = Size,
+                .FontWeight = Weight,
+                .Foreground = New SolidColorBrush(ForeColor),
+                .TextWrapping = TextWrapping.NoWrap}
+            Panel.Children.Add(CharBlock)
+            AnimateCharAppear(CharBlock)
+            Index += Length
+        End While
+        Panel.Tag = Model.Text.Length
+    End Sub
+
+    Private Shared Function NextUnit(Text As String, Start As Integer) As Integer
+        Dim C As Char = Text(Start)
+        If Char.IsLetterOrDigit(C) AndAlso AscW(C) < 128 Then
+            Dim Index As Integer = Start
+            While Index < Text.Length
+                Dim Current As Char = Text(Index)
+                If Char.IsLetterOrDigit(Current) AndAlso AscW(Current) < 128 Then
+                    Index += 1
+                Else
+                    Exit While
+                End If
+            End While
+            Return Index - Start
+        End If
+        Return 1
+    End Function
+
+    Private Shared Sub AnimateCharAppear(CharBlock As TextBlock)
+        Try
+            CharBlock.Opacity = 0
+            Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseInOut}
+            CharBlock.BeginAnimation(UIElement.OpacityProperty, New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(120))) With {.EasingFunction = Ease})
+        Catch
+        End Try
+    End Sub
 
     Private Shared Function BuildCodeBlock(Code As String) As UIElement
         Return New Border With {
@@ -582,19 +620,32 @@ Public Class AgentMascot
                 Exit For
             End If
         Next
-        If Topmost IsNot Nothing Then
-            Dim ContentHeight As Double = MeasureContent(Topmost)
-            Dim Viewport As Double = If(Topmost.Box.ActualHeight > 0, Topmost.Box.ActualHeight, Topmost.Box.Height)
+        Dim BestEntry As BubbleEntry = Nothing
+        Dim BestOverflow As Double = 0
+        For Each Entry In Entries
+            If Entry.Box.Visibility <> Visibility.Visible Then Continue For
+            Dim Content As Double = MeasureContent(Entry)
+            Dim ViewportNow As Double = If(Entry.Box.ActualHeight > 0, Entry.Box.ActualHeight, Entry.Box.Height)
+            If Double.IsNaN(ViewportNow) Then Continue For
+            If Content - ViewportNow > BestOverflow Then
+                BestOverflow = Content - ViewportNow
+                BestEntry = Entry
+            End If
+        Next
+        If BestEntry IsNot Nothing Then
+            Dim ContentHeight As Double = MeasureContent(BestEntry)
+            Logger.Info($"[AgentWheel] delta={e.Delta} content={ContentHeight:0} boxH={BestEntry.Box.ActualHeight:0} off={BestEntry.ScrollOffset:0}")
+            Dim Viewport As Double = If(BestEntry.Box.ActualHeight > 0, BestEntry.Box.ActualHeight, BestEntry.Box.Height)
             If Double.IsNaN(Viewport) Then Viewport = 0
             If ContentHeight > Viewport + 0.5 AndAlso Viewport > 0 Then
-                Topmost.NeedScroll = True
-                Topmost.Box.ClipToBounds = True
+                BestEntry.NeedScroll = True
+                BestEntry.Box.ClipToBounds = True
                 Dim MaxOffset As Double = Math.Max(0, ContentHeight - Viewport)
-                If e.Delta > 0 AndAlso Topmost.ScrollOffset <= 0.5 Then
+                If e.Delta > 0 AndAlso BestEntry.ScrollOffset <= 0.5 Then
                     ' 已到顶部，交给隐藏逻辑
                 Else
-                    Topmost.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, Topmost.ScrollOffset - e.Delta / 3.0))
-                    Topmost.Shift.Y = -Topmost.ScrollOffset
+                    BestEntry.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, BestEntry.ScrollOffset - e.Delta / 3.0))
+                    BestEntry.Shift.Y = -BestEntry.ScrollOffset
                     e.Handled = True
                     Return
                 End If
