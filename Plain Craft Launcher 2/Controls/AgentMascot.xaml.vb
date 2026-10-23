@@ -9,6 +9,7 @@ Public Class AgentMascot
     Private DragStart As Point
 
     Private ReadOnly Messages As New List(Of Border)
+    Private ReadOnly MessageIsUser As New List(Of Boolean)
     Private HiddenNewest As Integer = 0
 
     Private AnchorX As Double = 0
@@ -133,7 +134,8 @@ Public Class AgentMascot
         End While
 
         For Index As Integer = 0 To Messages.Count - 1
-            Dim Delay As Double = 0.05 + Math.Min(Index, 8) * 0.045
+            Dim Age As Integer = Messages.Count - 1 - Index
+            Dim Delay As Double = 0.05 + Math.Min(Age, 8) * 0.045
             Dim WantTime As TimeSpan = Now - TimeSpan.FromSeconds(Delay)
             Dim Sample As Point = Offset
             For i As Integer = Samples.Count - 1 To 0 Step -1
@@ -231,6 +233,7 @@ Public Class AgentMascot
         }
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Messages.Add(Box)
+        MessageIsUser.Add(IsUser)
         PanMessageLayer.Children.Add(Box)
         AddSway(Box, 3.0 + (Messages.Count Mod 3) * 0.6, 2.6 + (Messages.Count Mod 4) * 0.4)
         HiddenNewest = Math.Min(HiddenNewest, Math.Max(0, Messages.Count - 1))
@@ -250,8 +253,10 @@ Public Class AgentMascot
             Box.Visibility = Visibility.Visible
             Box.Measure(New Size(330, Double.PositiveInfinity))
             Dim Height As Double = Math.Max(20, Box.DesiredSize.Height)
+            Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
-            Canvas.SetLeft(Box, BaseX)
+            Dim IsUser As Boolean = If(Index < MessageIsUser.Count, MessageIsUser(Index), False)
+            Canvas.SetLeft(Box, If(IsUser, BaseX + (320 - Width), BaseX))
             Canvas.SetTop(Box, Bottom)
             Bottom -= 6
         Next
@@ -276,6 +281,7 @@ Public Class AgentMascot
     Private Sub ClearMessages()
         PanMessageLayer.Children.Clear()
         Messages.Clear()
+        MessageIsUser.Clear()
         Samples.Clear()
         HiddenNewest = 0
         ModAgent.Instance.Clear()
