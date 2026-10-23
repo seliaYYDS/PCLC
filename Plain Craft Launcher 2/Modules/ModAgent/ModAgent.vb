@@ -34,12 +34,43 @@ Public Class ModAgent
             If Raw.Count = 0 Then
                 Raw.Clear()
                 Raw.Add(New JObject From {{"role", "system"}, {"content", BuildSystemPrompt()}})
+                LoadSession()
             End If
         End SyncLock
     End Sub
 
+    Private Function SessionPath() As String
+        Return Paths.Base & "PCL\Agent\session.json"
+    End Function
+
+    ''' <summary>把当前会话写入磁盘。</summary>
+    Public Sub SaveSession()
+        Try
+            DirectoryUtils.Create(Paths.Base & "PCL\Agent\")
+            IO.File.WriteAllText(SessionPath(), Raw.ToString(Newtonsoft.Json.Formatting.None), System.Text.Encoding.UTF8)
+        Catch ex As Exception
+            Logger.Warn(ex, "保存 AI 会话失败")
+        End Try
+    End Sub
+
+    Private Sub LoadSession()
+        Try
+            Dim Path As String = SessionPath()
+            If Not IO.File.Exists(Path) Then Return
+            Dim Text As String = IO.File.ReadAllText(Path, System.Text.Encoding.UTF8)
+            Dim Loaded = JArray.Parse(Text)
+            If Loaded Is Nothing OrElse Loaded.Count = 0 Then Return
+            For Each Item In Loaded
+                If Item("role")?.ToString() = "system" Then Continue For
+                Raw.Add(Item)
+            Next
+        Catch ex As Exception
+            Logger.Warn(ex, "读取 AI 会话失败")
+        End Try
+    End Sub
+
     ''' <summary>发送用户消息并跑完工具循环；回调在调用线程触发。</summary>
-    Public Sub Send(UserText As String, OnText As Action(Of String), OnDone As Action, OnFail As Action(Of String))
+    Public Sub Send(UserText As String, OnText As Action(Of String), OnTool As Action(Of String), OnDone As Action, OnFail As Action(Of String))
         EnsureInit()
         If IsWaiting Then
             OnFail("上一个请求还在进行中")
@@ -48,6 +79,7 @@ Public Class ModAgent
         IsWaiting = True
         SyncLock Sync
             Raw.Add(New JObject From {{"role", "user"}, {"content", UserText}})
+            SaveSession()
         End SyncLock
 
         Try
@@ -68,6 +100,7 @@ Public Class ModAgent
                     For Each Item In ToolCalls
                         Dim Name As String = Item("function")("name").ToString()
                         Dim ArgsText As String = Item("function")("arguments")?.ToString()
+                        If OnTool IsNot Nothing Then OnTool(Name)
                         Dim Result As String = RunTool(Name, ArgsText)
                         SyncLock Sync
                             Raw.Add(New JObject From {

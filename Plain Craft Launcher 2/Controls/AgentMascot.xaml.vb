@@ -119,7 +119,10 @@ Public Class AgentMascot
         PanBubble.Visibility = Visibility.Visible
         PositionBubble()
         If PanMessages.Children.Count = 0 Then
-            AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
+            RenderHistory()
+            If PanMessages.Children.Count = 0 Then
+                AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
+            End If
         End If
         TxtInput.Focus()
     End Sub
@@ -168,8 +171,14 @@ Public Class AgentMascot
             Sub(Full)
                 RunInUi(Sub() UpdateReply(Reply, Full))
             End Sub,
+            Sub(ToolName)
+                RunInUi(Sub() SetStatus("正在使用 " & ToolName & " …"))
+            End Sub,
             Sub()
-                RunInUi(Sub() SetMood("happy"))
+                RunInUi(Sub()
+                            SetMood("happy")
+                            SetStatus("")
+                        End Sub)
             End Sub,
             Sub(Message)
                 RunInUi(Sub()
@@ -179,6 +188,25 @@ Public Class AgentMascot
             End Sub)
     End Sub
 
+    Private Sub SetStatus(Text As String)
+        If LabAgentStatus Is Nothing Then Return
+        LabAgentStatus.Text = Text
+        LabAgentStatus.Visibility = If(String.IsNullOrEmpty(Text), Visibility.Collapsed, Visibility.Visible)
+    End Sub
+
+    '把已保存的历史消息画出来
+    Public Sub RenderHistory()
+        ModAgent.Instance.EnsureInit()
+        For Each Item In ModAgent.Instance.Raw
+            Dim Role As String = Item("role")?.ToString()
+            If Role = "user" Then
+                AddBubble(Item("content")?.ToString(), True)
+            ElseIf Role = "assistant" AndAlso Item("tool_calls") Is Nothing Then
+                Dim Text As String = Item("content")?.ToString()
+                If Not String.IsNullOrEmpty(Text) Then AddBubble(Text, False)
+            End If
+        Next
+    End Sub
     Private Sub UpdateReply(Reply As TextBlock, Text As String)
         Reply.Text &= Text
         PanScroll.ScrollToEnd()
