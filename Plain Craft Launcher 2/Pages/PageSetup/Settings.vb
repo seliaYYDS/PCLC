@@ -129,6 +129,7 @@ Public Class Settings
         New Setting("ToolUpdateSnapshotLast", "", Source:=Sources.Registry),
         New Setting("UiLauncherTransparent", 600, OnChanged:=Sub(Value As Integer) If FrmMain IsNot Nothing Then FrmMain.Opacity = Value / 1000 + 0.4), '避免与 PCL1 设置冲突（UiLauncherOpacity）
         New Setting("UiWindowRadius", 6, OnChanged:=Sub() FormMain.ApplyWindowRadius()),
+        New Setting("UiTitleBarPosition", 0, OnChanged:=AddressOf FormMain.ApplyTitleBarPosition),
         New Setting("UiTitleStyle", 0, OnChanged:=Sub() ThemeRefreshMain()),
         New Setting("UiLauncherHue", 180),
         New Setting("UiLauncherSat", 80),
@@ -145,6 +146,7 @@ Public Class Settings
         New Setting("UiBackgroundOpacity", 1000, OnChanged:=AddressOf FormMain.UpdateBackgroundAndTitleBar),
         New Setting("UiBackgroundBlur", 0, OnChanged:=AddressOf FormMain.UpdateBackgroundAndTitleBar),
         New Setting("UiBackgroundSuit", 0, OnChanged:=AddressOf FormMain.UpdateBackgroundAndTitleBar),
+        New Setting("UiBackgroundPath", ""),
         New Setting("UiCustomType", 0, OnChanged:=AddressOf PageSetupUI.OnMainPageTypeChanged),
         New Setting("UiCustomPreset", 0),
         New Setting("UiCustomNet", ""),

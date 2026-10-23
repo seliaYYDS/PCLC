@@ -100,7 +100,7 @@
                     </StackPanel>
                 </Grid>
             </local:MyCard>
-            <local:MyCard x:Name="CardBackground" Margin="0,0,0,15" Title="背景图片">
+            <local:MyCard x:Name="CardBackground" Margin="0,0,0,15" Title="背景媒体">
                 <StackPanel Margin="25,40,25,20">
                     <Grid x:Name="PanBackgroundSuit" Height="28" Margin="0,0,0,10" Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
@@ -147,10 +147,12 @@
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Button" />
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Button" />
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Button" />
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Button" />
                         </Grid.ColumnDefinitions>
-                        <local:MyButton x:Name="BtnBackgroundOpen" MinWidth="140" Text="打开文件夹" Padding="13,0" Margin="0,0,20,0" ToolTip="将背景图片放到该文件夹，PCL 将会在每次打开时随机加载其中的一张图片"/>
-                        <local:MyButton x:Name="BtnBackgroundRefresh" MinWidth="140" Text="刷新背景图片" Padding="13,0" Margin="0,0,20,0" ToolTip="随机加载文件夹内的一张背景图片" Grid.Column="1"/>
-                        <local:MyButton x:Name="BtnBackgroundClear" MinWidth="140" Text="清空背景图片" Visibility="Collapsed" Padding="13,0" Margin="0,0,20,0" ColorType="Red" Grid.Column="2"/>
+                        <local:MyButton x:Name="BtnBackgroundFile" MinWidth="130" Text="选择文件" Padding="13,0" Margin="0,0,15,0" ToolTip="选择一个图片或视频作为背景" />
+                        <local:MyButton x:Name="BtnBackgroundFolder" MinWidth="130" Text="选择文件夹" Padding="13,0" Margin="0,0,15,0" Grid.Column="1" ToolTip="选择一个文件夹，每次启动从中随机抽取一个图片或视频" />
+                        <local:MyButton x:Name="BtnBackgroundRefresh" MinWidth="130" Text="刷新背景" Padding="13,0" Margin="0,0,15,0" Grid.Column="2" ToolTip="重新随机抽取" />
+                        <local:MyButton x:Name="BtnBackgroundClear" MinWidth="130" Text="清空背景" Visibility="Collapsed" Padding="13,0" ColorType="Red" Grid.Column="3" />
                     </Grid>
                 </StackPanel>
             </local:MyCard>
@@ -209,6 +211,19 @@
                         <local:MyRadioBox Text="渐变" x:Name="RadioTitleStyle0" Height="22" local:SettingService.Key="UiTitleStyle" local:SettingService.Value="0" Grid.Column="1" />
                         <local:MyRadioBox Text="纯色" x:Name="RadioTitleStyle1" Height="22" local:SettingService.Key="UiTitleStyle" local:SettingService.Value="1" Grid.Column="2" />
                         <local:MyRadioBox Text="半透明" x:Name="RadioTitleStyle2" Height="22" local:SettingService.Key="UiTitleStyle" local:SettingService.Value="2" Grid.Column="3" />
+                    </Grid>
+                    <Grid Margin="-1,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="标题栏位置" Margin="0,0,25,0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <local:MyRadioBox Text="顶部" Height="22" Margin="0,0,20,0" local:SettingService.Key="UiTitleBarPosition" local:SettingService.Value="0" />
+                            <local:MyRadioBox Text="左侧" Height="22" Margin="0,0,20,0" local:SettingService.Key="UiTitleBarPosition" local:SettingService.Value="1" />
+                            <local:MyRadioBox Text="右侧" Height="22" Margin="0,0,20,0" local:SettingService.Key="UiTitleBarPosition" local:SettingService.Value="2" />
+                            <local:MyRadioBox Text="底部" Height="22" local:SettingService.Key="UiTitleBarPosition" local:SettingService.Value="3" />
+                        </StackPanel>
                     </Grid>
                     <local:MyCheckBox Text="标题栏居左" Margin="-1,8,0,3" Height="22" x:Name="CheckLogoLeft" local:SettingService.Key="UiLogoLeft" Visibility="Collapsed" />
                     <Grid x:Name="PanLogoText" Margin="0,14,0,5" Visibility="Collapsed">

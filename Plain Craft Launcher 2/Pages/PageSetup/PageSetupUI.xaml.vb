@@ -66,13 +66,32 @@ Public Class PageSetupUI
         Refresh()
     End Sub
 
-    '背景图片
-    Private Sub BtnUIBgOpen_Click(sender As Object, e As EventArgs) Handles BtnBackgroundOpen.Click
-        OpenExplorer(Paths.Base & "PCL\Pictures\")
+    '背景媒体
+    Private Sub BtnBackgroundFile_Click(sender As Object, e As EventArgs) Handles BtnBackgroundFile.Click
+        Dim File As String = Dialogs.SelectFile("选择背景媒体", False,
+            filter:={({"png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "m4v", "wmv", "avi", "mov"}, "图片与视频")}).FirstOrDefault
+        If String.IsNullOrEmpty(File) Then Return
+        Settings.Set("UiBackgroundPath", File)
+        BackgroundRefresh(True, True)
+        Refresh()
+    End Sub
+    Private Sub BtnBackgroundFolder_Click(sender As Object, e As EventArgs) Handles BtnBackgroundFolder.Click
+        Dim Folder As String = Dialogs.SelectFolder("选择背景媒体文件夹", False).FirstOrDefault
+        If String.IsNullOrEmpty(Folder) Then Return
+        Settings.Set("UiBackgroundPath", Folder)
+        BackgroundRefresh(True, True)
+        Refresh()
     End Sub
     Private Sub BtnBackgroundRefresh_Click(sender As Object, e As EventArgs) Handles BtnBackgroundRefresh.Click
         BackgroundRefresh(True, True)
     End Sub
+    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
+        Settings.Set("UiBackgroundPath", "")
+        BackgroundRefresh(False, True)
+        Hint("背景媒体已清空！", HintType.Green)
+        Refresh()
+    End Sub
+
     Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
         If IsNothing(PanBackgroundOpacity) Then Return
         If Show Then
@@ -80,74 +99,90 @@ Public Class PageSetupUI
             PanBackgroundBlur.Visibility = Visibility.Visible
             PanBackgroundSuit.Visibility = Visibility.Visible
             BtnBackgroundClear.Visibility = Visibility.Visible
-            CardBackground.Title = "背景图片（" & Count & " 张）"
+            CardBackground.Title = If(Count > 1, $"背景媒体（{Count} 个）", "背景媒体")
         Else
             PanBackgroundOpacity.Visibility = Visibility.Collapsed
             PanBackgroundBlur.Visibility = Visibility.Collapsed
             PanBackgroundSuit.Visibility = Visibility.Collapsed
             BtnBackgroundClear.Visibility = Visibility.Collapsed
-            CardBackground.Title = "背景图片"
+            CardBackground.Title = "背景媒体"
         End If
         CardBackground.TriggerForceResize()
     End Sub
-    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
-        If MyMsgBox("即将删除背景图片文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
-            DirectoryUtils.Delete(Paths.Base & "PCL\Pictures")
-            BackgroundRefresh(False, True)
-            Hint("背景图片已清空！", HintType.Green)
-        End If
-    End Sub
+
+    ''' <summary>是否为支持的视频文件。</summary>
+    Public Shared Function IsVideoFile(Path As String) As Boolean
+        Select Case PathUtils.GetExtension(Path).ToLower
+            Case "mp4", "m4v", "wmv", "avi", "mov"
+                Return True
+            Case Else
+                Return False
+        End Select
+    End Function
+    ''' <summary>是否为支持的图片文件。</summary>
+    Public Shared Function IsImageFile(Path As String) As Boolean
+        Select Case PathUtils.GetExtension(Path).ToLower
+            Case "png", "jpg", "jpeg", "gif", "webp", "bmp"
+                Return True
+            Case Else
+                Return False
+        End Select
+    End Function
+
     ''' <summary>
-    ''' 刷新背景图片及设置页 UI。
+    ''' 刷新背景媒体及设置页 UI。
     ''' </summary>
     ''' <param name="IsHint">是否显示刷新提示。</param>
-    ''' <param name="Refresh">是否刷新图片显示。</param>
+    ''' <param name="Refresh">是否刷新显示。</param>
     Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
         Try
+            Dim Source As String = Settings.Get(Of String)("UiBackgroundPath")
+            Logger.Info($"背景媒体来源：{If(String.IsNullOrWhiteSpace(Source), "(未设置)", Source)}")
+            Dim Address As String = Nothing
+            Dim Count As Integer = 0
 
-            '获取可用的图片文件
-            DirectoryUtils.Create(Paths.Base & "PCL\Pictures\")
-            Dim Pic As New List(Of String)
-            For Each File In DirectoryUtils.EnumerateFiles(Paths.Base & "PCL\Pictures\", True)
-                Dim Extension As String = PathUtils.GetExtension(File)
-                If Extension <> "ini" AndAlso Extension <> "db" Then Pic.Add(File) '文件夹可能会被加入 .ini 和 thumbs.db
-            Next
-            '加载
-            If Not Pic.Any() Then
-                If Refresh Then
-                    If FrmMain.ImgBack.Visibility = Visibility.Collapsed Then
-                        If IsHint Then Hint("未检测到可用背景图片！", HintType.Red)
-                    Else
-                        FrmMain.ImgBack.Visibility = Visibility.Collapsed
-                        If IsHint Then Hint("背景图片已清除！", HintType.Green)
-                    End If
+            If Not String.IsNullOrWhiteSpace(Source) Then
+                If System.IO.Directory.Exists(Source) Then
+                    Dim Files As New List(Of String)
+                    For Each File In DirectoryUtils.EnumerateFiles(Source, True)
+                        If IsVideoFile(File) OrElse IsImageFile(File) Then Files.Add(File)
+                    Next
+                    Count = Files.Count
+                    If Files.Any Then Address = RandomOne(Files)
+                ElseIf System.IO.File.Exists(Source) AndAlso (IsVideoFile(Source) OrElse IsImageFile(Source)) Then
+                    Address = Source
+                    Count = 1
                 End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(False, 0)
-            Else
-                If Refresh Then
-                    Dim Address As String = RandomOne(Pic)
-                    Try
-                        Logger.Info($"加载背景图片：{Address}")
-                        FrmMain.ImgBack.Background = New MyBitmap(Address)
-                        FrmMain.ImgBack.Visibility = Visibility.Visible
-                        FrmMain.UpdateBackgroundAndTitleBar()
-                        If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
-                    Catch ex As Exception
-                        If ex.Message.Contains("参数无效") Then
-                            Logger.Error($"刷新背景图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{Address}", LogBehavior.Alert)
-                        Else
-                            Logger.Error(ex, $"刷新背景图片失败（{Address}）", LogBehavior.Alert)
-                        End If
-                    End Try
-                End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(True, Pic.Count)
             End If
 
+            If Refresh Then
+                If Address Is Nothing Then
+                    FrmMain.StopVideoBackground()
+                    FrmMain.ImgBack.Visibility = Visibility.Collapsed
+                    If IsHint Then Hint("未找到可用的背景媒体！", HintType.Red)
+                Else
+                    Try
+                        Logger.Info($"加载背景媒体：{Address}")
+                        If IsVideoFile(Address) Then
+                            FrmMain.ImgBack.Visibility = Visibility.Collapsed
+                            FrmMain.PlayVideoBackground(Address)
+                        Else
+                            FrmMain.StopVideoBackground()
+                            FrmMain.ImgBack.Background = New MyBitmap(Address)
+                            FrmMain.ImgBack.Visibility = Visibility.Visible
+                        End If
+                        FrmMain.UpdateBackgroundAndTitleBar()
+                        If IsHint Then Hint("背景已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
+                    Catch ex As Exception
+                        Logger.Error(ex, $"刷新背景媒体失败（{Address}）", LogBehavior.Alert)
+                    End Try
+                End If
+            End If
+            If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(Address IsNot Nothing, Count)
         Catch ex As Exception
-            Logger.Error(ex, "刷新背景图片时出现未知错误")
+            Logger.Error(ex, "刷新背景媒体时出现未知错误")
         End Try
     End Sub
-
     '顶部栏
     Private Sub BtnLogoChange_Click(sender As Object, e As EventArgs) Handles BtnLogoChange.Click
         Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpg", "jpeg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
