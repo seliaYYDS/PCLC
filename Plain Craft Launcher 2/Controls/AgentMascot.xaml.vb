@@ -1055,10 +1055,10 @@ Public Class AgentMascot
             Sub()
                 RunInUi(Sub()
                            SetBusy(False)
-                           If Reply.Notes.Count > 0 Then
-                               Reply.Notes.Clear()
-                               RenderEntry(Reply)
-                           End If
+                           Reply.Notes.Clear()
+                           '结束时整块重建一次，保证与重新打开时的渲染一致
+                           Reply.Host.Children.Clear()
+                           RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
             End Sub,
