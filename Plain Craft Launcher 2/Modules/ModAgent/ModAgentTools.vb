@@ -221,6 +221,12 @@ Public Module ModAgentTools
                     Return "访问网页：" & Args("url")?.ToString()
                 Case "read_log"
                     Return "读取启动器日志"
+                Case "get_launcher_state"
+                    Return "读取启动器状态"
+                Case "list_instances"
+                    Return "列出已安装版本"
+                Case "list_accounts"
+                    Return "列出已保存账号"
                 Case "modify_instance_loader"
                     Return "为版本添加加载器：" & Args("loader")?.ToString() & If(Args("name") Is Nothing, "", "（" & Args("name").ToString() & "）")
                 Case "install_modpack"
