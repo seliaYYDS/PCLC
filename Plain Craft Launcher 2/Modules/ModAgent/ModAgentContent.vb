@@ -258,7 +258,102 @@ Public Module ModAgentContent
         End Try
     End Function
 
-    Private Function SearchModrinth(Args As JObject) As JObject
+    Friend Class CategoryEntry
+        Public Key As String
+        Public ClassId As Integer
+        Public Id As Integer
+    End Class
+
+    Private CategoryLoaded As Boolean = False
+    Private ReadOnly ModCategories As New Dictionary(Of String, String)
+    Private ReadOnly CfCategories As New List(Of CategoryEntry)
+    Private ReadOnly CategoryLock As New Object()
+
+    Private Function NormalizeCategoryKey(Text As String) As String
+        Dim Builder As New StringBuilder()
+        For Each Ch As Char In If(Text, "").ToLower()
+            If Char.IsLetterOrDigit(Ch) OrElse AscW(Ch) > 127 Then Builder.Append(Ch)
+        Next
+        Return Builder.ToString()
+    End Function
+
+    Private Sub EnsureCategoryMap()
+        If CategoryLoaded Then Return
+        SyncLock CategoryLock
+            If CategoryLoaded Then Return
+            'Modrinth
+            Try
+                Dim Arr As JArray = TryCast(GetJson(ModrinthApi & "tag/category"), JArray)
+                If Arr IsNot Nothing Then
+                    For Each Item In Arr
+                        Dim Name As String = Item("name")?.ToString()
+                        Dim Slug As String = Item("slug")?.ToString()
+                        If String.IsNullOrWhiteSpace(Slug) Then Slug = If(String.IsNullOrWhiteSpace(Name), Nothing, Name.ToLower())
+                        If String.IsNullOrWhiteSpace(Name) OrElse String.IsNullOrWhiteSpace(Slug) Then Continue For
+                        ModCategories(NormalizeCategoryKey(Name)) = Slug
+                        ModCategories(NormalizeCategoryKey(Slug)) = Slug
+                    Next
+                End If
+            Catch ex As Exception
+                Logger.Warn(ex, "获取 Modrinth 分类表失败")
+            End Try
+            'CurseForge
+            Try
+                Dim Json As JToken = DlModRequest("https://api.curseforge.com/v1/categories?gameId=432")
+                Dim Data As JArray = TryCast(Json("data"), JArray)
+                If Data IsNot Nothing Then
+                    For Each Item In Data
+                        Dim Id As Integer = 0
+                        If Item("id") Is Nothing OrElse Not Integer.TryParse(Item("id").ToString(), Id) Then Continue For
+                        Dim ClassId As Integer = 0
+                        If Item("classId") IsNot Nothing Then Integer.TryParse(Item("classId").ToString(), ClassId)
+                        Dim Name As String = Item("name")?.ToString()
+                        Dim Slug As String = Item("slug")?.ToString()
+                        If Not String.IsNullOrWhiteSpace(Name) Then
+                            CfCategories.Add(New CategoryEntry With {.Key = NormalizeCategoryKey(Name), .ClassId = ClassId, .Id = Id})
+                        End If
+                        If Not String.IsNullOrWhiteSpace(Slug) Then
+                            CfCategories.Add(New CategoryEntry With {.Key = NormalizeCategoryKey(Slug), .ClassId = ClassId, .Id = Id})
+                        End If
+                    Next
+                End If
+            Catch ex As Exception
+                Logger.Warn(ex, "获取 CurseForge 分类表失败")
+            End Try
+            CategoryLoaded = True
+        End SyncLock
+    End Sub
+
+    Private Function ResolveModCategories(Requested As List(Of String)) As List(Of String)
+        EnsureCategoryMap()
+        Dim Result As New List(Of String)
+        For Each Raw In Requested
+            Dim Key As String = NormalizeCategoryKey(Raw)
+            Dim Slug As String = Nothing
+            If ModCategories.TryGetValue(Key, Slug) Then
+                If Not Result.Contains(Slug) Then Result.Add(Slug)
+            Else
+                Dim Lower As String = Raw.ToLower()
+                If Not Result.Contains(Lower) Then Result.Add(Lower)
+            End If
+        Next
+        Return Result
+    End Function
+
+    Private Function ResolveCfCategory(Requested As List(Of String), ClassId As Integer) As Integer
+        EnsureCategoryMap()
+        For Each Raw In Requested
+            Dim Numeric As Integer = 0
+            If Integer.TryParse(Raw, Numeric) Then Return Numeric
+            Dim Key As String = NormalizeCategoryKey(Raw)
+            For Each Entry In CfCategories
+                If Entry.Key = Key AndAlso Entry.ClassId = ClassId Then Return Entry.Id
+            Next
+        Next
+        Return 0
+    End Function
+
+        Private Function SearchModrinth(Args As JObject) As JObject
         Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
         Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
         Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
@@ -267,7 +362,7 @@ Public Module ModAgentContent
         Dim Sort As String = If(Args("sort") Is Nothing, "relevance", Args("sort").ToString())
         Dim Versions As List(Of String) = GetStringList(Args, "gameVersions")
         If Versions.Count = 0 AndAlso Args("gameVersion") IsNot Nothing Then Versions.Add(Args("gameVersion").ToString())
-        Dim Categories As List(Of String) = GetStringList(Args, "categories")
+        Dim Categories As List(Of String) = ResolveModCategories(GetStringList(Args, "categories"))
 
         Dim Facets As New JArray()
         Facets.Add(New JArray From {"project_type:" & TypeToProjectType(Type)})
@@ -401,9 +496,8 @@ Public Module ModAgentContent
             Dim LoaderId As Integer = CurseForgeLoaderId(Loader)
             If LoaderId > 0 Then Url &= "&modLoaderType=" & LoaderId
         End If
-        If Categories.Count > 0 Then
-            If IsNumeric(Categories(0)) Then Url &= "&categoryId=" & Categories(0)
-        End If
+        Dim CategoryId As Integer = ResolveCfCategory(Categories, CurseForgeClassId(Type))
+        If CategoryId > 0 Then Url &= "&categoryId=" & CategoryId
 
         Dim Json As JToken = DlModRequest(Url)
         Dim Data As JArray = TryCast(Json("data"), JArray)
