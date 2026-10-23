@@ -63,6 +63,40 @@ Public Module ModAgentTools
             .Risk = 1,
             .Schema = WebSchema,
             .Run = Function(Args) ModAgentWeb.Fetch(Args)})
+
+        '修改内存
+        Dim MemSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {{"mb", New JObject From {{"type", "integer"}, {"description", "分配给游戏的 MB 数，例如 4096"}}}}},
+            {"required", New JArray From {"mb"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "set_memory",
+            .Description = "设置当前选中版本的内存分配（MB）",
+            .Risk = 1,
+            .Schema = MemSchema,
+            .Run = Function(Args) SetMemory(Args)})
+
+        '打开页面
+        Dim PageSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {{"page", New JObject From {{"type", "string"}, {"enum", New JArray From {"启动", "下载", "设置", "更多"}}}}}},
+            {"required", New JArray From {"page"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "open_page",
+            .Description = "切换启动器到指定页面",
+            .Risk = 1,
+            .Schema = PageSchema,
+            .Run = Function(Args) OpenPage(Args)})
+
+        '启动游戏
+        ToolList.Add(New AgentTool With {
+            .Name = "launch_game",
+            .Description = "启动当前选中的 Minecraft 版本",
+            .Risk = 2,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) LaunchGame()})
     End Sub
 
     ''' <summary>把工具定义转成 OpenAI tools 数组。</summary>
@@ -137,6 +171,37 @@ Public Module ModAgentTools
         Catch ex As Exception
             Return "读取日志失败：" & ex.Message
         End Try
+    End Function
+
+
+    Private Function SetMemory(Args As JObject) As String
+        If McInstanceSelected Is Nothing Then Return "当前没有选中的版本"
+        Dim Mb As Integer = Args("mb").ToObject(Of Integer)()
+        If Mb < 512 Then Mb = 512
+        If Mb > 65536 Then Mb = 65536
+        Settings.Set("VersionRamType", 2, Instance:=McInstanceSelected)
+        Settings.Set("VersionRamCustom", Mb, Instance:=McInstanceSelected)
+        Return $"已将 {McInstanceSelected.Name} 的内存设置为 {Mb} MB"
+    End Function
+
+    Private Function OpenPage(Args As JObject) As String
+        Dim Name As String = Args("page")?.ToString()
+        Dim Target As FormMain.PageType
+        Select Case Name
+            Case "启动" : Target = FormMain.PageType.Launch
+            Case "下载" : Target = FormMain.PageType.Download
+            Case "设置" : Target = FormMain.PageType.Setup
+            Case "更多" : Target = FormMain.PageType.Other
+            Case Else : Return "未知页面：" & Name
+        End Select
+        RunInUi(Sub() FrmMain.PageChange(New FormMain.PageStackData With {.Page = Target}))
+        Return "已切换到" & Name
+    End Function
+
+    Private Function LaunchGame() As String
+        If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
+        RunInUi(Sub() McLaunchStart())
+        Return "正在启动 " & McInstanceSelected.Name
     End Function
 
 End Module
