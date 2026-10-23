@@ -103,13 +103,15 @@ Public Module ModAgentTools
             {"type", "object"},
             {"properties", New JObject From {
                 {"version", New JObject From {{"type", "string"}, {"description", "原版版本号，例如 1.20.1"}}},
-                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称，留空则与版本号相同"}}}
+                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称，留空则与版本号相同"}}},
+                {"loader", New JObject From {{"type", "string"}, {"enum", New JArray From {"vanilla", "fabric", "forge", "neoforge"}}, {"description", "加载器类型，默认 vanilla"}}},
+                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "Fabric 加载器版本，留空自动选择稳定版"}}}
             }},
             {"required", New JArray From {"version"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "install_instance",
-            .Description = "安装指定原版 Minecraft 版本（如需装 Mod 加载器，请提示用户手动在下载页选择）",
+            .Description = "安装 Minecraft 版本，支持原版与 Fabric（Forge/NeoForge 请让用户去下载页手动选择）",
             .Risk = 2,
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
@@ -225,6 +227,46 @@ Public Module ModAgentTools
         If IO.Directory.Exists(Folder) Then Return "目标版本文件夹已存在：" & Folder
         Dim Url As String = DlClientListGet(Version)
         If String.IsNullOrWhiteSpace(Url) Then Return "未在版本列表中找到 " & Version
+        Dim Loader As String = If(Args("loader") Is Nothing, "vanilla", Args("loader").ToString().ToLower())
+        Dim LoaderVersion As String = If(Args("loaderVersion") Is Nothing, "", Args("loaderVersion").ToString())
+        Dim Components As McComponents
+        If Loader = "forge" OrElse Loader = "neoforge" Then
+            Return "暂不支持自动安装 Forge/NeoForge，请到 下载 → 安装 页面手动选择加载器版本"
+        End If
+        If Loader = "fabric" Then
+            If DlFabricListLoader.State <> LoadState.Finished Then
+                DlFabricListLoader.Start(0)
+                DlFabricListLoader.WaitForExit(0)
+            End If
+            Dim GameList As JArray = TryCast(DlFabricListLoader.Output.Value("game"), JArray)
+            If GameList IsNot Nothing Then
+                Dim Supported As Boolean = False
+                For Each Item In GameList
+                    If Item("version").ToString() = Version Then Supported = True
+                Next
+                If Not Supported Then Return "Fabric 不支持 Minecraft " & Version
+            End If
+            Dim Loaders As JArray = TryCast(DlFabricListLoader.Output.Value("loader"), JArray)
+            If Loaders Is Nothing OrElse Loaders.Count = 0 Then Return "获取 Fabric 版本列表失败"
+            Dim Chosen As String = Nothing
+            If LoaderVersion <> "" Then
+                For Each Item In Loaders
+                    If Item("version").ToString() = LoaderVersion Then Chosen = LoaderVersion
+                Next
+            Else
+                For Each Item In Loaders
+                    If Item("stable") IsNot Nothing AndAlso Item("stable").ToString().ToLower() = "true" Then
+                        Chosen = Item("version").ToString()
+                        Exit For
+                    End If
+                Next
+                If Chosen Is Nothing Then Chosen = Loaders(0)("version").ToString()
+            End If
+            If Chosen Is Nothing Then Return "未找到指定的 Fabric 版本：" & LoaderVersion
+            Components = New McComponents(Version, Nothing, Nothing, Nothing, Chosen, Nothing, Nothing, Nothing)
+        Else
+            Components = New McComponents(Version, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing)
+        End If
         Dim Success As Boolean = False
         Dim Done As New Threading.ManualResetEvent(False)
         RunInUi(Sub()
@@ -232,7 +274,7 @@ Public Module ModAgentTools
                        Dim Request As New McInstallRequest With {
                            .NewInstanceName = Name,
                            .InstanceFolder = Folder,
-                           .Components = New McComponents(Version, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing),
+                           .Components = Components,
                            .MinecraftJson = Url
                        }
                        Success = McInstallStart(Request)

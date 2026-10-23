@@ -117,6 +117,7 @@ Public Class ModAgent
                     Raw.Add(Message)
                 End SyncLock
                 IsWaiting = False
+                SaveSession()
                 OnDone()
                 Return
             Loop
