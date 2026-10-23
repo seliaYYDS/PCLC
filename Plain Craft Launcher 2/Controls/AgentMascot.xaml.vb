@@ -1,19 +1,29 @@
+Imports System.Text
+Imports System.Text.RegularExpressions
+Imports System.Windows.Documents
 Imports System.Windows.Media.Animation
 Imports System.Windows.Media.Imaging
 
-''' <summary>AI 助手「小瑟」：可拖拽人偶 + 独立浮动消息气泡。</summary>
+''' <summary>AI 助手「小瑟」：可拖拽人偶 + 独立浮动消息气泡（支持 Markdown）。</summary>
 Public Class AgentMascot
+
+    Friend Class BubbleEntry
+        Public Box As Border
+        Public Host As StackPanel
+        Public Raw As New StringBuilder()
+        Public IsUser As Boolean
+        Public Notes As New List(Of String)
+    End Class
 
     Private IsDragging As Boolean = False
     Private DragOffset As Point
     Private DragStart As Point
 
-    Private ReadOnly Messages As New List(Of Border)
-    Private ReadOnly MessageIsUser As New List(Of Boolean)
+    Private ReadOnly Entries As New List(Of BubbleEntry)
+    Private HiddenNewest As Integer = 0
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
-    Private HiddenNewest As Integer = 0
 
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
@@ -47,7 +57,6 @@ Public Class AgentMascot
                                 End Sub
         AddHandler Me.Loaded, Sub() RefreshState()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
-        AddSway(PanInput, 3.0, 3.0)
         Dim MascotGroup As New TransformGroup()
         MascotGroup.Children.Add(TransMascot)
         MascotGroup.Children.Add(MascotScale)
@@ -56,7 +65,21 @@ Public Class AgentMascot
         AddHandler WheelCatcher.PreviewMouseWheel, AddressOf OnWheel
         Panel.SetZIndex(WheelCatcher, -1)
         PanMessageLayer.Children.Add(WheelCatcher)
+        AddSway(PanInput, 3.0, 3.0)
     End Sub
+
+    Private ReadOnly Property MascotWidth As Double
+        Get
+            If ImgMascot IsNot Nothing AndAlso ImgMascot.ActualWidth > 0 Then Return ImgMascot.ActualWidth
+            Return 92
+        End Get
+    End Property
+    Private ReadOnly Property MascotHeight As Double
+        Get
+            If ImgMascot IsNot Nothing AndAlso ImgMascot.ActualHeight > 0 Then Return ImgMascot.ActualHeight
+            Return 140
+        End Get
+    End Property
 
     Public Sub RefreshState()
         Visibility = If(Settings.Get(Of Boolean)("AgentEnabled"), Visibility.Visible, Visibility.Collapsed)
@@ -77,10 +100,10 @@ Public Class AgentMascot
         If ActualWidth <= 0 Then Return
         Dim X As Double = Settings.Get(Of Integer)("AgentPosX")
         Dim Y As Double = Settings.Get(Of Integer)("AgentPosY")
-        If X < 0 Then X = ActualWidth - 164
-        If Y < 0 Then Y = ActualHeight - 172
-        X = Math.Max(0, Math.Min(ActualWidth - 140, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 140, Y))
+        If X < 0 Then X = ActualWidth - MascotWidth - 20
+        If Y < 0 Then Y = ActualHeight - MascotHeight - 24
+        X = Math.Max(0, Math.Min(ActualWidth - MascotWidth, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - MascotHeight, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         UpdateTargets()
@@ -93,14 +116,15 @@ Public Class AgentMascot
         If Double.IsNaN(MascotY) Then MascotY = 0
         Dim InputWidth As Double = If(PanInput.ActualWidth > 0, PanInput.ActualWidth, 380)
         Dim InputHeight As Double = If(PanInput.ActualHeight > 0, PanInput.ActualHeight, 44)
-        If MascotX + 140 + 10 + InputWidth <= ActualWidth - 8 Then
-            TargetX = MascotX + 140 + 10
+        If MascotX + MascotWidth + 10 + InputWidth <= ActualWidth - 8 Then
+            TargetX = MascotX + MascotWidth + 10
         Else
             TargetX = Math.Max(8, MascotX - InputWidth - 10)
         End If
         TargetX = Math.Max(8, Math.Min(ActualWidth - InputWidth - 8, TargetX))
-        TargetY = Math.Max(8, Math.Min(ActualHeight - InputHeight - 8, MascotY + 140 - InputHeight))
+        TargetY = Math.Max(8, Math.Min(ActualHeight - InputHeight - 8, MascotY + MascotHeight - InputHeight))
     End Sub
+
 
     Private Sub StartFollow()
         If RenderingHooked Then Return
@@ -117,8 +141,9 @@ Public Class AgentMascot
 
     Private Sub OnRendering(sender As Object, e As EventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
+        Dim Now As TimeSpan = TimeSpan.FromSeconds(Environment.TickCount / 1000.0)
         Dim Args = TryCast(e, RenderingEventArgs)
-        Dim Now As TimeSpan = If(Args Is Nothing, TimeSpan.FromMilliseconds(TimeSpan.FromTicks(DateTime.Now.Ticks).TotalMilliseconds), Args.RenderingTime)
+        If Args IsNot Nothing Then Now = Args.RenderingTime
         Dim Delta As Double = 1 / 60.0
         If LastFrame <> TimeSpan.Zero Then Delta = Math.Max(0.001, Math.Min(0.1, (Now - LastFrame).TotalSeconds))
         LastFrame = Now
@@ -144,8 +169,8 @@ Public Class AgentMascot
             Samples.RemoveAt(0)
         End While
 
-        For Index As Integer = 0 To Messages.Count - 1
-            Dim Age As Integer = Messages.Count - 1 - Index
+        For Index As Integer = 0 To Entries.Count - 1
+            Dim Age As Integer = Entries.Count - 1 - Index
             Dim Delay As Double = 0.02 + Math.Min(Age, 6) * 0.02
             Dim WantTime As TimeSpan = Now - TimeSpan.FromSeconds(Delay)
             Dim Sample As Point = Offset
@@ -155,7 +180,7 @@ Public Class AgentMascot
                     Exit For
                 End If
             Next
-            Dim Group As TransformGroup = TryCast(Messages(Index).RenderTransform, TransformGroup)
+            Dim Group As TransformGroup = TryCast(Entries(Index).Box.RenderTransform, TransformGroup)
             If Group IsNot Nothing AndAlso Group.Children.Count > 0 Then
                 Dim Follow As TranslateTransform = TryCast(Group.Children(0), TranslateTransform)
                 If Follow IsNot Nothing Then
@@ -166,29 +191,6 @@ Public Class AgentMascot
         Next
     End Sub
 
-    Private Sub SquashMascot(Scale As Double)
-        Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
-            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
-        MascotScale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim)
-    End Sub
-
-    Private Sub FadeIn(Target As UIElement, Milliseconds As Integer, Delay As Integer)
-        If Target Is Nothing Then Return
-        Target.BeginAnimation(UIElement.OpacityProperty, Nothing)
-        Target.Opacity = 0
-        Dim Anim As New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
-            .BeginTime = TimeSpan.FromMilliseconds(Delay),
-            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
-        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
-    End Sub
-
-    Private Sub FadeOut(Target As UIElement, Milliseconds As Integer, OnDone As Action)
-        If Target Is Nothing Then Return
-        Dim Anim As New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
-            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
-        If OnDone IsNot Nothing Then AddHandler Anim.Completed, Sub(s, e) OnDone()
-        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
-    End Sub
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
         DragStart = e.GetPosition(Me)
         DragOffset = New Point(Canvas.GetLeft(ImgMascot), Canvas.GetTop(ImgMascot))
@@ -204,8 +206,8 @@ Public Class AgentMascot
         If Not IsDragging Then Return
         Dim X As Double = DragOffset.X + Now.X - DragStart.X
         Dim Y As Double = DragOffset.Y + Now.Y - DragStart.Y
-        X = Math.Max(0, Math.Min(ActualWidth - 140, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 140, Y))
+        X = Math.Max(0, Math.Min(ActualWidth - MascotWidth, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - MascotHeight, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         UpdateTargets()
@@ -221,6 +223,12 @@ Public Class AgentMascot
             ToggleBubble()
         End If
         IsDragging = False
+    End Sub
+
+    Private Sub SquashMascot(Scale As Double)
+        Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
+        MascotScale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim)
     End Sub
 
     Private Sub ToggleBubble()
@@ -241,23 +249,23 @@ Public Class AgentMascot
         Canvas.SetTop(PanInput, CurrentY)
         PanMessageLayer.Width = Math.Max(0, ActualWidth)
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
-        If Messages.Count = 0 Then
+        If Entries.Count = 0 Then
             RenderHistory()
-            If Messages.Count = 0 Then AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
+            If Entries.Count = 0 Then AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
         End If
         LayoutMessages()
         StartFollow()
         FadeIn(PanInput, 150, 0)
-        For Index As Integer = 0 To Messages.Count - 1
-            FadeIn(Messages(Index), 160, Math.Min(Index, 6) * 25)
+        For Index As Integer = 0 To Entries.Count - 1
+            FadeIn(Entries(Index).Box, 160, Math.Min(Index, 6) * 25)
         Next
         TxtInput.Focus()
     End Sub
 
     Private Sub HideBubble()
         StopFollow()
-        For Index As Integer = 0 To Messages.Count - 1
-            FadeOut(Messages(Index), 100, Nothing)
+        For Index As Integer = 0 To Entries.Count - 1
+            FadeOut(Entries(Index).Box, 100, Nothing)
         Next
         FadeOut(PanInput, 100, Sub()
                                   PanInput.Visibility = Visibility.Collapsed
@@ -265,10 +273,10 @@ Public Class AgentMascot
                               End Sub)
     End Sub
 
-    Private Function AddBubble(Text As String, IsUser As Boolean) As TextBlock
-        Dim Content As New TextBlock With {.Text = Text, .TextWrapping = TextWrapping.Wrap, .FontSize = 13, .LineHeight = 20}
+    Private Function AddBubble(Text As String, IsUser As Boolean) As BubbleEntry
+        Dim Host As New StackPanel()
         Dim Box As New Border With {
-            .Child = Content,
+            .Child = Host,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
             .MaxWidth = 320,
@@ -276,23 +284,139 @@ Public Class AgentMascot
             .BorderBrush = New MyColor(If(IsUser, "#D6DAFF", "#D8DCE8")),
             .BorderThickness = New Thickness(1)
         }
+        Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser}
+        Entry.Raw.Append(Text)
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
-        Messages.Add(Box)
-        MessageIsUser.Add(IsUser)
+        Entries.Add(Entry)
         MessageShown.Add(True)
         PanMessageLayer.Children.Add(Box)
-        AddSway(Box, 3.0 + (Messages.Count Mod 3) * 0.6, 2.6 + (Messages.Count Mod 4) * 0.4)
-        HiddenNewest = Math.Min(HiddenNewest, Math.Max(0, Messages.Count - 1))
+        AddSway(Box, 3.0 + (Entries.Count Mod 3) * 0.6, 2.6 + (Entries.Count Mod 4) * 0.4)
+        RenderEntry(Entry)
+        HiddenNewest = Math.Min(HiddenNewest, Math.Max(0, Entries.Count - 1))
         LayoutMessages()
-        Return Content
+        Return Entry
     End Function
+
+    Private Sub RenderEntry(Entry As BubbleEntry)
+        Entry.Host.Children.Clear()
+        If Entry.IsUser Then
+            Entry.Host.Children.Add(New TextBlock With {
+                .Text = Entry.Raw.ToString(),
+                .TextWrapping = TextWrapping.Wrap,
+                .FontSize = 13,
+                .LineHeight = 20,
+                .Foreground = New MyColor(51, 51, 51)})
+            Return
+        End If
+        If Entry.Raw.Length = 0 Then
+            Entry.Host.Children.Add(New TextBlock With {
+                .Text = "思考中…",
+                .FontSize = 12,
+                .Foreground = New MyColor(150, 155, 170),
+                .Margin = New Thickness(0, 1, 0, 1)})
+        Else
+            For Each Block In ParseMarkdown(Entry.Raw.ToString())
+                Entry.Host.Children.Add(Block)
+            Next
+        End If
+        For Each Note In Entry.Notes
+            Entry.Host.Children.Add(New TextBlock With {
+                .Text = Note,
+                .FontSize = 11,
+                .Foreground = New MyColor(150, 155, 170),
+                .Margin = New Thickness(0, 3, 0, 0)})
+        Next
+    End Sub
+
+    Private Shared Function ParseMarkdown(Text As String) As List(Of UIElement)
+        Dim Result As New List(Of UIElement)
+        Dim Lines As String() = Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+        Dim Code As New StringBuilder()
+        Dim InCode As Boolean = False
+        Dim Fence3 As String = New String(ChrW(96), 3)
+        For Each Line In Lines
+            If Line.TrimStart().StartsWith(Fence3) Then
+                If InCode Then
+                    Result.Add(BuildCodeBlock(Code.ToString()))
+                    Code.Clear()
+                End If
+                InCode = Not InCode
+                Continue For
+            End If
+            If InCode Then
+                Code.AppendLine(Line)
+                Continue For
+            End If
+            If String.IsNullOrWhiteSpace(Line) Then Continue For
+            Dim Trimmed As String = Line.TrimStart()
+            Dim Indent As Double = Line.Length - Trimmed.Length
+            Dim Paragraph As New TextBlock With {
+                .TextWrapping = TextWrapping.Wrap,
+                .FontSize = 13,
+                .LineHeight = 20,
+                .Foreground = New MyColor(51, 51, 51),
+                .Margin = New Thickness(Math.Min(Indent * 4, 16), 1, 0, 1)}
+            If Trimmed.StartsWith("#") Then
+                Dim Level As Integer = 0
+                While Level < Trimmed.Length AndAlso Trimmed(Level) = "#"c
+                    Level += 1
+                End While
+                Paragraph.FontSize = If(Level <= 1, 15, 14)
+                Paragraph.FontWeight = FontWeights.SemiBold
+                Paragraph.Margin = New Thickness(0, 4, 0, 2)
+                AddInline(Paragraph, Trimmed.TrimStart("#"c).Trim())
+            ElseIf Trimmed.StartsWith("- ") OrElse Trimmed.StartsWith("* ") Then
+                Paragraph.Margin = New Thickness(4 + Math.Min(Indent * 4, 16), 1, 0, 1)
+                AddInline(Paragraph, "• " & Trimmed.Substring(2))
+            Else
+                AddInline(Paragraph, Trimmed)
+            End If
+            Result.Add(Paragraph)
+        Next
+        If Code.Length > 0 Then Result.Add(BuildCodeBlock(Code.ToString()))
+        Return Result
+    End Function
+
+    Private Shared Function BuildCodeBlock(Code As String) As UIElement
+        Return New Border With {
+            .Background = New MyColor(245, 246, 250),
+            .CornerRadius = New CornerRadius(4),
+            .Padding = New Thickness(8, 6, 8, 6),
+            .Margin = New Thickness(0, 3, 0, 3),
+            .Child = New TextBlock With {
+                .Text = Code.TrimEnd(),
+                .FontFamily = New FontFamily("Consolas"),
+                .FontSize = 12,
+                .TextWrapping = TextWrapping.Wrap,
+                .Foreground = New MyColor(60, 64, 80)}}
+    End Function
+
+    Private Shared Sub AddInline(Target As TextBlock, Text As String)
+        Dim Fence As Char = ChrW(96)
+        Dim Pattern As New Regex("(\*\*.+?\*\*|" & Fence & "[^" & Fence & "]+?" & Fence & ")")
+        Dim Last As Integer = 0
+        For Each M As Match In Pattern.Matches(Text)
+            If M.Index > Last Then Target.Inlines.Add(New Run(Text.Substring(Last, M.Index - Last)))
+            Dim Piece As String = M.Value
+            If Piece.StartsWith("**") Then
+                Target.Inlines.Add(New Bold(New Run(Piece.Substring(2, Piece.Length - 4))))
+            Else
+                Target.Inlines.Add(New Run(Piece.Trim(Fence)) With {
+                    .FontFamily = New FontFamily("Consolas"),
+                    .Foreground = New MyColor(90, 96, 120)})
+            End If
+            Last = M.Index + M.Length
+        Next
+        If Last < Text.Length Then Target.Inlines.Add(New Run(Text.Substring(Last)))
+    End Sub
 
     Private Sub LayoutMessages(Optional Animate As Boolean = False)
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
-        For Index As Integer = Messages.Count - 1 To 0 Step -1
-            Dim Box As Border = Messages(Index)
-            Dim WantVisible As Boolean = (Messages.Count - 1 - Index) >= HiddenNewest
+        For Index As Integer = Entries.Count - 1 To 0 Step -1
+            Dim Entry As BubbleEntry = Entries(Index)
+            Dim Box As Border = Entry.Box
+            Dim WantVisible As Boolean = (Entries.Count - 1 - Index) >= HiddenNewest
             Dim WasVisible As Boolean = If(Index < MessageShown.Count, MessageShown(Index), True)
             If WantVisible <> WasVisible Then
                 While MessageShown.Count <= Index
@@ -312,8 +436,8 @@ Public Class AgentMascot
             Dim Height As Double = Math.Max(20, Box.DesiredSize.Height)
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
-            Dim IsUser As Boolean = If(Index < MessageIsUser.Count, MessageIsUser(Index), False)
-            Canvas.SetLeft(Box, If(IsUser, BaseX + (320 - Width), BaseX))
+            Dim X As Double = If(Entry.IsUser, BaseX + (320 - Width), BaseX)
+            Canvas.SetLeft(Box, X)
             If Animate Then
                 Box.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Bottom, New Duration(TimeSpan.FromMilliseconds(150))) With {
                     .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}})
@@ -327,20 +451,18 @@ Public Class AgentMascot
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
         Canvas.SetLeft(PanMessageLayer, 0)
         Canvas.SetTop(PanMessageLayer, 0)
-        '滚轮捕获层覆盖整块消息区域
         Dim AreaTop As Double = Math.Min(Bottom, AnchorY - 8)
-        Dim AreaHeight As Double = Math.Max(0, (AnchorY - 8) - AreaTop)
         WheelCatcher.Width = 320
-        WheelCatcher.Height = AreaHeight
+        WheelCatcher.Height = Math.Max(0, (AnchorY - 8) - AreaTop)
         Canvas.SetLeft(WheelCatcher, BaseX)
         Canvas.SetTop(WheelCatcher, AreaTop)
     End Sub
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
-        If Messages.Count <= 1 Then Return
+        If Entries.Count <= 1 Then Return
         If e.Delta > 0 Then
-            HiddenNewest = Math.Min(Messages.Count - 1, HiddenNewest + 1)
+            HiddenNewest = Math.Min(Entries.Count - 1, HiddenNewest + 1)
         Else
             HiddenNewest = Math.Max(0, HiddenNewest - 1)
         End If
@@ -349,30 +471,47 @@ Public Class AgentMascot
     End Sub
 
     Private Sub ClearMessages()
-        Dim Pending As Integer = Messages.Count
+        SetMood("normal")
+        Dim Pending As Integer = Entries.Count
         If Pending = 0 Then
             FinishClear()
             Return
         End If
-        For Each Box In Messages
-            FadeOut(Box, 120, Sub()
-                                      Pending -= 1
-                                      If Pending <= 0 Then FinishClear()
-                                  End Sub)
+        Dim Snapshot As New List(Of BubbleEntry)(Entries)
+        For Each Entry In Snapshot
+            FadeOut(Entry.Box, 120, Sub()
+                                       Pending -= 1
+                                       If Pending <= 0 Then FinishClear()
+                                   End Sub)
         Next
     End Sub
 
     Private Sub FinishClear()
-        For Each Box In Messages
-            PanMessageLayer.Children.Remove(Box)
+        For Each Entry In Entries
+            PanMessageLayer.Children.Remove(Entry.Box)
         Next
-        Messages.Clear()
-        MessageIsUser.Clear()
+        Entries.Clear()
         MessageShown.Clear()
         Samples.Clear()
         HiddenNewest = 0
         ModAgent.Instance.Clear()
-        AddBubble("对话已清空。", False)
+        ShowTemporaryMessage()
+    End Sub
+
+    Private Sub ShowTemporaryMessage()
+        Dim Entry = AddBubble("对话已清空", False)
+        FadeIn(Entry.Box, 140, 0)
+        Dim Timer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(1400)}
+        AddHandler Timer.Tick,
+            Sub(sender, args)
+                Timer.Stop()
+                FadeOut(Entry.Box, 220, Sub()
+                                             PanMessageLayer.Children.Remove(Entry.Box)
+                                             Entries.Remove(Entry)
+                                             LayoutMessages(True)
+                                         End Sub)
+            End Sub
+        Timer.Start()
     End Sub
 
     Private Sub RenderHistory()
@@ -394,7 +533,7 @@ Public Class AgentMascot
         If ModAgent.Instance.IsWaiting Then Return
         TxtInput.Text = ""
         AddBubble(Text, True)
-        Dim Reply As TextBlock = AddBubble("", False)
+        Dim Reply As BubbleEntry = AddBubble("", False)
         HiddenNewest = 0
         LayoutMessages()
         Dim Worker As New Threading.Thread(AddressOf SendWorker)
@@ -405,28 +544,29 @@ Public Class AgentMascot
     Private Sub SendWorker(State As Object)
         Dim Args As Object() = CType(State, Object())
         Dim Text As String = CStr(Args(0))
-        Dim Reply As TextBlock = CType(Args(1), TextBlock)
+        Dim Reply As BubbleEntry = CType(Args(1), BubbleEntry)
         ModAgent.Instance.Send(Text,
             Sub(Full)
                 RunInUi(Sub()
-                           Reply.Text &= Full
+                           Reply.Raw.Append(Full)
+                           RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
             End Sub,
             Sub(ToolName)
                 RunInUi(Sub()
-                           Reply.Text = ""
+                           Reply.Notes.Add("·  正在调用 " & ToolName)
+                           RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
             End Sub,
             Sub()
-                RunInUi(Sub()
-                           LayoutMessages()
-                       End Sub)
+                RunInUi(Sub() LayoutMessages())
             End Sub,
             Sub(Message)
                 RunInUi(Sub()
-                           Reply.Text = "出错了：" & Message
+                           Reply.Raw.Append("出错了：" & Message)
+                           RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
             End Sub)
@@ -456,6 +596,24 @@ Public Class AgentMascot
             SwayTransform.BeginAnimation(TranslateTransform.XProperty, Sway)
         Catch
         End Try
+    End Sub
+
+    Private Sub FadeIn(Target As UIElement, Milliseconds As Integer, Delay As Integer)
+        If Target Is Nothing Then Return
+        Target.BeginAnimation(UIElement.OpacityProperty, Nothing)
+        Target.Opacity = 0
+        Dim Anim As New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
+            .BeginTime = TimeSpan.FromMilliseconds(Delay),
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
+        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
+    End Sub
+
+    Private Sub FadeOut(Target As UIElement, Milliseconds As Integer, OnDone As Action)
+        If Target Is Nothing Then Return
+        Dim Anim As New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(Milliseconds))) With {
+            .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
+        If OnDone IsNot Nothing Then AddHandler Anim.Completed, Sub(s, e) OnDone()
+        Target.BeginAnimation(UIElement.OpacityProperty, Anim)
     End Sub
 
     Private Function ConfirmTool(Name As String, Args As String) As Boolean
