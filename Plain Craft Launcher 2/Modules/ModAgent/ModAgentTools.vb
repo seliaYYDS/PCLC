@@ -17,7 +17,7 @@ Public Module ModAgentTools
         '启动器状态
         ToolList.Add(New AgentTool With {
             .Name = "get_launcher_state",
-            .Description = "Get launcher state: theme, selected instance and memory settings.",
+            .Description = "Get launcher state: theme, selected instance, java path and basic settings.",
             .Risk = 0,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) GetLauncherState()})
