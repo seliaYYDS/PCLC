@@ -874,8 +874,8 @@ NextStack:
                        End Sub
         End If
         Select Case MyMsgBox(Detail, If(IsManualAnalyze, "错误报告分析结果", "Minecraft 出现错误"),
-            If(AgentOn, "小瑟救我qwq", "确定"), If(IsManualAnalyze OrElse DirectFile Is Nothing, "", "查看输出"), If(IsManualAnalyze, "", "导出错误报告"),
-            Button1Action:=AskAgent,
+            "确定", If(IsManualAnalyze OrElse DirectFile Is Nothing, "", "查看输出"), If(IsManualAnalyze, "", "导出错误报告"),
+            Button4:=If(AgentOn, "小瑟救我qwq", ""), Button4Action:=AskAgent,
             Button2Action:=If(IsManualAnalyze OrElse DirectFile Is Nothing, Nothing,
             Sub()
                 '弹窗选择：查看输出
