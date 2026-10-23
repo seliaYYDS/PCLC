@@ -159,6 +159,7 @@
                             <local:MyComboBoxItem local:SettingService.Value="1" Content="标准：仅高风险操作需确认" />
                             <local:MyComboBoxItem local:SettingService.Value="2" Content="宽松：同会话内首次确认后不再询问" />
                         </local:MyComboBox>
+                    <local:MyCheckBox local:SettingService.Key="AgentAllowLocalNet" Text="允许小瑟访问本机与内网地址" Margin="-1,10,0,0" Height="22" />
                     </Grid>
                 </StackPanel>
             </local:MyCard>
