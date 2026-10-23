@@ -116,10 +116,13 @@ Public Class AgentMascot
             Dim Speed As Double = Math.Max(0.35, 0.9 - Index * 0.06)
             LagX(Index) += (OffsetX - LagX(Index)) * Speed
             LagY(Index) += (OffsetY - LagY(Index)) * Speed
-            Dim Transform As TranslateTransform = TryCast(Messages(Index).RenderTransform, TranslateTransform)
-            If Transform IsNot Nothing Then
-                Transform.X = OffsetX - LagX(Index)
-                Transform.Y = OffsetY - LagY(Index)
+            Dim Group As TransformGroup = TryCast(Messages(Index).RenderTransform, TransformGroup)
+            If Group IsNot Nothing AndAlso Group.Children.Count > 0 Then
+                Dim Follow As TranslateTransform = TryCast(Group.Children(0), TranslateTransform)
+                If Follow IsNot Nothing Then
+                    Follow.X = OffsetX - LagX(Index)
+                    Follow.Y = OffsetY - LagY(Index)
+                End If
             End If
         Next
     End Sub
@@ -327,14 +330,18 @@ Public Class AgentMascot
     Private Sub AddSway(Target As FrameworkElement, Amplitude As Double, Seconds As Double)
         Try
             If Target Is Nothing Then Return
-            Dim Transform As New TranslateTransform()
-            Target.RenderTransform = Transform
+            Dim Follow As New TranslateTransform()
+            Dim SwayTransform As New TranslateTransform()
+            Dim Group As New TransformGroup()
+            Group.Children.Add(Follow)
+            Group.Children.Add(SwayTransform)
+            Target.RenderTransform = Group
             Dim Sway As New DoubleAnimation(Amplitude, -Amplitude, New Duration(TimeSpan.FromSeconds(Seconds))) With {
                 .AutoReverse = True,
                 .RepeatBehavior = RepeatBehavior.Forever,
                 .EasingFunction = New SineEase With {.EasingMode = EasingMode.EaseInOut},
                 .BeginTime = TimeSpan.FromMilliseconds(New Random().Next(0, 1500))}
-            Transform.BeginAnimation(TranslateTransform.XProperty, Sway)
+            SwayTransform.BeginAnimation(TranslateTransform.XProperty, Sway)
         Catch
         End Try
     End Sub
