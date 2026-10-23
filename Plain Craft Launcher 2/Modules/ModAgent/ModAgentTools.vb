@@ -115,6 +115,19 @@ Public Module ModAgentTools
             .Risk = 2,
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
+
+        '切换小瑟的表情
+        Dim MoodSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {{"mood", New JObject From {{"type", "string"}, {"enum", New JArray From {"normal", "happy", "confused", "angry", "shy"}}}}}},
+            {"required", New JArray From {"mood"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "set_mascot_mood",
+            .Description = "设置小瑟的表情来表达情绪：normal 平静、happy 开心、confused 疑惑、angry 生气、shy 害羞",
+            .Risk = 0,
+            .Schema = MoodSchema,
+            .Run = Function(Args) SetMascotMood(Args)})
     End Sub
 
     ''' <summary>把工具定义转成 OpenAI tools 数组。</summary>
@@ -142,6 +155,20 @@ Public Module ModAgentTools
 
     '实现
 
+    Private Function SetMascotMood(Args As JObject) As String
+        Dim Mood As String = Args("mood")?.ToString()
+        If String.IsNullOrWhiteSpace(Mood) Then Return "缺少 mood 参数"
+        Mood = Mood.ToLower()
+        Select Case Mood
+            Case "normal", "happy", "confused", "angry", "shy"
+            Case Else
+                Return "不支持的表情：" & Mood
+        End Select
+        RunInUi(Sub()
+                   If FrmMain IsNot Nothing AndAlso FrmMain.FrmAgent IsNot Nothing Then FrmMain.FrmAgent.SetMood(Mood)
+               End Sub)
+        Return "已将小瑟的表情切换为 " & Mood
+    End Function
     Private Function GetLauncherState() As String
         Try
             Dim State As New JObject()

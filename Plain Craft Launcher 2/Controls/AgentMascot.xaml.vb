@@ -146,7 +146,7 @@ Public Class AgentMascot
 
         For Index As Integer = 0 To Messages.Count - 1
             Dim Age As Integer = Messages.Count - 1 - Index
-            Dim Delay As Double = 0.05 + Math.Min(Age, 8) * 0.045
+            Dim Delay As Double = 0.02 + Math.Min(Age, 6) * 0.02
             Dim WantTime As TimeSpan = Now - TimeSpan.FromSeconds(Delay)
             Dim Sample As Point = Offset
             For i As Integer = Samples.Count - 1 To 0 Step -1
@@ -397,7 +397,6 @@ Public Class AgentMascot
         Dim Reply As TextBlock = AddBubble("", False)
         HiddenNewest = 0
         LayoutMessages()
-        SetMood("confused")
         Dim Worker As New Threading.Thread(AddressOf SendWorker)
         Worker.IsBackground = True
         Worker.Start(New Object() {Text, Reply})
@@ -422,14 +421,12 @@ Public Class AgentMascot
             End Sub,
             Sub()
                 RunInUi(Sub()
-                           SetMood("happy")
                            LayoutMessages()
                        End Sub)
             End Sub,
             Sub(Message)
                 RunInUi(Sub()
                            Reply.Text = "出错了：" & Message
-                           SetMood("angry")
                            LayoutMessages()
                        End Sub)
             End Sub)
