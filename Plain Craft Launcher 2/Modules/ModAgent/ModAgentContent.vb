@@ -66,6 +66,25 @@ Public Module ModAgentContent
             .Schema = InstallSchema,
             .Run = Function(Args) InstallContent(Args)})
 
+        Dim BatchSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"items", New JObject From {{"type", "array"}, {"items", New JObject From {{"type", "string"}}}, {"description", "项目 slug 或 ID 列表（Modrinth）"}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "目标 Minecraft 版本，默认取当前实例的版本"}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "加载器：fabric/forge/neoforge/quilt，默认取当前实例"}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}},
+                {"withDependencies", New JObject From {{"type", "boolean"}, {"description", "是否自动安装必需前置，默认 true"}}}
+            }},
+            {"required", New JArray From {"items"}}
+        }
+        List.Add(New AgentTool With {
+            .Name = "install_projects",
+            .Description = "按项目批量安装资源并自动补全必需前置，一次可装多个；自动挑选匹配目标版本与加载器的文件",
+            .Risk = 2,
+            .Schema = BatchSchema,
+            .Run = Function(Args) InstallProjects(Args)})
+
         Dim DeleteSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
@@ -244,7 +263,9 @@ Public Module ModAgentContent
                     {"gameVersions", Item("game_versions")},
                     {"loaders", Item("loaders")},
                     {"url", Primary("url")?.ToString()},
-                    {"fileName", Primary("filename")?.ToString()}
+                    {"fileName", Primary("filename")?.ToString()},
+                    {"projectId", Item("project_id")?.ToString()},
+                    {"dependencies", Item("dependencies")}
                 })
             Next
             Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
@@ -424,6 +445,123 @@ Public Module ModAgentContent
             Return "读取存档失败：" & ex.Message
         End Try
     End Function
+    Private Function FetchVersions(Project As String, GameVersion As String, Loader As String) As JArray
+        Dim Url As String = ModrinthApi & "project/" & Uri.EscapeDataString(Project) & "/version"
+        Dim Query As New List(Of String)
+        If GameVersion <> "" Then Query.Add("game_versions=" & Uri.EscapeDataString("[""" & GameVersion & """]"))
+        If Loader <> "" Then Query.Add("loaders=" & Uri.EscapeDataString("[""" & Loader.ToLower() & """]"))
+        If Query.Count > 0 Then Url &= "?" & String.Join("&", Query)
+        Return TryCast(GetJson(Url), JArray)
+    End Function
+
+    Private Function PickRelease(Versions As JArray) As JToken
+        If Versions Is Nothing OrElse Versions.Count = 0 Then Return Nothing
+        For Each Item In Versions
+            If Item("version_type")?.ToString() = "release" Then Return Item
+        Next
+        Return Versions(0)
+    End Function
+
+    Private ReadOnly SlugCache As New Dictionary(Of String, String)
+
+    Private Function ResolveSlug(ProjectId As String) As String
+        If String.IsNullOrWhiteSpace(ProjectId) Then Return Nothing
+        SyncLock SlugCache
+            If SlugCache.ContainsKey(ProjectId) Then Return SlugCache(ProjectId)
+        End SyncLock
+        Try
+            Dim Json As JToken = GetJson(ModrinthApi & "project/" & Uri.EscapeDataString(ProjectId))
+            Dim Slug As String = Json("slug")?.ToString()
+            SyncLock SlugCache
+                SlugCache(ProjectId) = Slug
+            End SyncLock
+            Return Slug
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    Private Function InstallProjects(Args As JObject) As String
+        Try
+            Dim Items As JArray = TryCast(Args("items"), JArray)
+            If Items Is Nothing OrElse Items.Count = 0 Then Return "缺少 items 参数"
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            Dim Target As McInstance = FindInstance(InstanceName)
+            If Target Is Nothing Then Return "没有找到版本：" & InstanceName
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            If GameVersion = "" AndAlso Target.Version IsNot Nothing Then GameVersion = Target.Version.VanillaName
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            If Loader = "" AndAlso Target.Version IsNot Nothing Then
+                If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.Fabric) Then Loader = "fabric"
+                If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.Forge) Then Loader = "forge"
+                If Target.Version.ModLoaderVersions.ContainsKey(ModLoaders.NeoForge) Then Loader = "neoforge"
+            End If
+            Dim TypeName As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim WithDeps As Boolean = Args("withDependencies") Is Nothing OrElse Args("withDependencies").ToObject(Of Boolean)()
+            Dim Folder As String = ContentFolder(TypeName, "", InstanceName)
+            If Folder Is Nothing Then Return "无法确定目标目录"
+            IO.Directory.CreateDirectory(Folder)
+
+            Dim Queue As New Queue(Of String)
+            For Each Item In Items
+                Dim Slug As String = Item.ToString().Trim()
+                If Slug <> "" Then Queue.Enqueue(Slug)
+            Next
+            Dim Visited As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            Dim Installed As New JArray()
+            Dim Failed As New JArray()
+            While Queue.Count > 0 AndAlso Visited.Count < 40
+                Dim Slug As String = Queue.Dequeue()
+                If Not Visited.Add(Slug) Then Continue While
+                Dim Versions As JArray = FetchVersions(Slug, GameVersion, Loader)
+                Dim Version As JToken = PickRelease(Versions)
+                If Version Is Nothing Then
+                    Failed.Add(New JObject From {{"project", Slug}, {"reason", "没有匹配 " & GameVersion & "/" & Loader & " 的版本"}})
+                    Continue While
+                End If
+                Dim Files As JArray = TryCast(Version("files"), JArray)
+                If Files Is Nothing OrElse Files.Count = 0 Then
+                    Failed.Add(New JObject From {{"project", Slug}, {"reason", "版本缺少文件"}})
+                    Continue While
+                End If
+                Dim Primary As JToken = Files(0)
+                Dim FileName As String = Primary("filename")?.ToString()
+                Dim FileUrl As String = Primary("url")?.ToString()
+                If String.IsNullOrWhiteSpace(FileName) OrElse String.IsNullOrWhiteSpace(FileUrl) Then
+                    Failed.Add(New JObject From {{"project", Slug}, {"reason", "文件地址无效"}})
+                    Continue While
+                End If
+                Dim TargetFile As String = IO.Path.Combine(Folder, IO.Path.GetFileName(FileName))
+                If IO.File.Exists(TargetFile) Then
+                    Installed.Add(New JObject From {{"project", Slug}, {"file", FileName}, {"note", "已存在"}})
+                Else
+                    Try
+                        DownloadFile(FileUrl, TargetFile)
+                        Installed.Add(New JObject From {{"project", Slug}, {"file", FileName}})
+                    Catch ex As Exception
+                        Failed.Add(New JObject From {{"project", Slug}, {"reason", "下载失败：" & ex.Message}})
+                        Continue While
+                    End Try
+                End If
+                If WithDeps Then
+                    For Each Dep In CType(If(Version("dependencies"), New JArray()), JArray)
+                        If Dep("dependency_type")?.ToString() <> "required" Then Continue For
+                        Dim DepId As String = Dep("project_id")?.ToString()
+                        Dim DepSlug As String = ResolveSlug(DepId)
+                        If Not String.IsNullOrWhiteSpace(DepSlug) AndAlso Not Visited.Contains(DepSlug) Then Queue.Enqueue(DepSlug)
+                    Next
+                End If
+            End While
+            Dim Result As New JObject From {
+                {"gameVersion", GameVersion}, {"loader", Loader}, {"folder", Folder},
+                {"installed", Installed}, {"failed", Failed}
+            }
+            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "批量安装失败：" & ex.Message
+        End Try
+    End Function
+
     Private Function DeleteContent(Args As JObject) As String
         Try
             Dim FileName As String = Args("fileName")?.ToString()

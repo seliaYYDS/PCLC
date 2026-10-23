@@ -1032,6 +1032,26 @@ Public Class AgentMascot
         Catch
         End Try
     End Sub
+    ''' <summary>把一段错误信息交给 AI 处理。</summary>
+    Public Sub AskAboutError(ErrorText As String)
+        RunInUi(Sub()
+                   Try
+                       If Not Settings.Get(Of Boolean)("AgentEnabled") Then Return
+                       Visibility = Visibility.Visible
+                       If PanInput.Visibility <> Visibility.Visible Then ToggleBubble()
+                       Dim Text As String = If(ErrorText, "").Trim()
+                       If Text.Length > 1500 Then Text = Text.Substring(0, 1500) & "…"
+                       If ModAgent.Instance.IsWaiting Then
+                           TxtInput.Text = "启动器报错了，帮我看看：" & vbCrLf & Text
+                           Return
+                       End If
+                       TxtInput.Text = "启动器报错了，帮我看看：" & vbCrLf & Text
+                       SendMessage()
+                   Catch ex As Exception
+                       Logger.Warn(ex, "把错误交给 AI 处理失败")
+                   End Try
+               End Sub)
+    End Sub
     Private Sub SendMessage()
         Dim Text As String = TxtInput.Text.Trim()
         If Text.Length = 0 Then Return
