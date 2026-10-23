@@ -943,11 +943,14 @@ Public Class AgentMascot
         For Each Entry In Entries
             If Entry.Box.Visibility <> Visibility.Visible Then Continue For
             If Entry.Viewer Is Nothing Then Continue For
-            Dim Left As Double = Canvas.GetLeft(Entry.Box)
-            Dim Top As Double = Canvas.GetTop(Entry.Box)
-            If Double.IsNaN(Left) OrElse Double.IsNaN(Top) Then Continue For
-            Dim Inside As Boolean = Position.X >= Left AndAlso Position.X <= Left + Entry.Box.ActualWidth AndAlso
-                                    Position.Y >= Top AndAlso Position.Y <= Top + Entry.Box.ActualHeight
+            Dim Bounds As Rect
+            Try
+                Bounds = Entry.Box.TransformToAncestor(PanMessageLayer).TransformBounds(New Rect(0, 0, Entry.Box.ActualWidth, Entry.Box.ActualHeight))
+            Catch
+                Continue For
+            End Try
+            Dim Inside As Boolean = Position.X >= Bounds.Left AndAlso Position.X <= Bounds.Right AndAlso
+                                    Position.Y >= Bounds.Top AndAlso Position.Y <= Bounds.Bottom
             Dim Overflow As Double = Entry.Viewer.ScrollableHeight
             '只有鼠标悬停在超长消息上才接管滚动
             If Inside AndAlso Overflow > 0.5 Then
