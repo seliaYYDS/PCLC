@@ -390,6 +390,7 @@ EndHint:
     Public FrmSetupLaunch As PageSetupLaunch
     Public FrmSetupUI As PageSetupUI
     Public FrmSetupSystem As PageSetupSystem
+Public FrmSetupAgent As PageSetupAgent
     Public FrmSetupLink As PageSetupLink
 
     '其他页面声明

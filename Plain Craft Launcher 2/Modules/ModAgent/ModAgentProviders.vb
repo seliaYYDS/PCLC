@@ -28,25 +28,23 @@ Public Module ModAgentProviders
     End Sub
 
     ''' <summary>按 Id 取预设，找不到返回自定义。</summary>
-    Public Function GetPreset(Id As String) As AgentProviderPreset
-        For Each Preset In Presets
-            If Preset.Id = Id Then Return Preset
-        Next
-        Return Presets(Presets.Count - 1)
+    Public Function GetPreset(Index As Integer) As AgentProviderPreset
+        If Index < 0 OrElse Index >= Presets.Count Then Return Presets(0)
+        Return Presets(Index)
     End Function
 
     ''' <summary>当前生效的 BaseUrl（未填写时回落到预设）。</summary>
     Public Function CurrentBaseUrl() As String
         Dim Custom As String = Settings.Get(Of String)("AgentBaseUrl")
         If Not String.IsNullOrWhiteSpace(Custom) Then Return Custom.Trim().TrimEnd("/")
-        Return GetPreset(Settings.Get(Of String)("AgentProvider")).BaseUrl.TrimEnd("/")
+        Return GetPreset(Settings.Get(Of Integer)("AgentProvider")).BaseUrl.TrimEnd("/")
     End Function
 
     ''' <summary>当前生效的模型名（未填写时回落到预设第一个）。</summary>
     Public Function CurrentModel() As String
         Dim Custom As String = Settings.Get(Of String)("AgentModel")
         If Not String.IsNullOrWhiteSpace(Custom) Then Return Custom.Trim()
-        Dim Models = GetPreset(Settings.Get(Of String)("AgentProvider")).Models
+        Dim Models = GetPreset(Settings.Get(Of Integer)("AgentProvider")).Models
         If Models.Length > 0 Then Return Models(0)
         Return ""
     End Function

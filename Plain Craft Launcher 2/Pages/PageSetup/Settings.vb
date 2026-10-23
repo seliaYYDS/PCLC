@@ -142,7 +142,7 @@ Public Class Settings
         New Setting("UiLauncherThemeHide2", "0|1|2|3|4", Source:=Sources.Registry, Encrypted:=True),
         New Setting("UiLauncherLogo", True),
         New Setting("AgentEnabled", False, OnChanged:=AddressOf FormMain.RefreshAgentState),
-        New Setting("AgentProvider", "deepseek"),
+        New Setting("AgentProvider", 1),
         New Setting("AgentBaseUrl", ""),
         New Setting("AgentApiKey", "", Encrypted:=True),
         New Setting("AgentModel", ""),

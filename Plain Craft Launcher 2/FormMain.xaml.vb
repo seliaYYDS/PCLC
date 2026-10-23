@@ -1575,6 +1575,7 @@ Public Class FormMain
         SetupLink = 1
         SetupUI = 2
         SetupSystem = 3
+        SetupAgent = 4
         LinkMain = 0
         OtherHelp = 0
         OtherAbout = 1

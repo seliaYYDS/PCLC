@@ -396,6 +396,9 @@
     <Compile Include="Pages\PageSetup\PageSetupSystem.xaml.vb">
       <DependentUpon>PageSetupSystem.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageSetup\PageSetupAgent.xaml.vb">
+      <DependentUpon>PageSetupAgent.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Pages\PageSetup\PageSetupLink.xaml.vb">
       <DependentUpon>PageSetupLink.xaml</DependentUpon>
     </Compile>
@@ -655,6 +658,10 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="Pages\PageSetup\PageSetupSystem.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Pages\PageSetup\PageSetupAgent.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
