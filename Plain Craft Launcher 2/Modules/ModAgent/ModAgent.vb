@@ -19,6 +19,7 @@ Public Class ModAgent
         SyncLock Sync
             Raw.Clear()
             Raw.Add(New JObject From {{"role", "system"}, {"content", BuildSystemPrompt()}})
+            SaveSession()
         End SyncLock
     End Sub
 

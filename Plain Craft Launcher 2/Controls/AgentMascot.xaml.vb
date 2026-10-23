@@ -13,6 +13,8 @@ Public Class AgentMascot
         Public Raw As New StringBuilder()
         Public IsUser As Boolean
         Public Notes As New List(Of String)
+        Public Pending As New StringBuilder()
+        Public Viewer As ScrollViewer
     End Class
 
     Private IsDragging As Boolean = False
@@ -24,6 +26,7 @@ Public Class AgentMascot
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
+    Private WithEvents TypingTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(18)}
 
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
@@ -66,6 +69,7 @@ Public Class AgentMascot
         Panel.SetZIndex(WheelCatcher, -1)
         PanMessageLayer.Children.Add(WheelCatcher)
         AddSway(PanInput, 3.0, 3.0)
+        TypingTimer.Start()
     End Sub
 
     Private ReadOnly Property MascotWidth As Double
@@ -191,6 +195,18 @@ Public Class AgentMascot
         Next
     End Sub
 
+    Private Sub TypingTimer_Tick(sender As Object, e As EventArgs) Handles TypingTimer.Tick
+        Dim Changed As Boolean = False
+        For Each Entry In Entries
+            If Entry.Pending.Length = 0 Then Continue For
+            Dim Take As Integer = Math.Min(3, Entry.Pending.Length)
+            Entry.Raw.Append(Entry.Pending.ToString(0, Take))
+            Entry.Pending.Remove(0, Take)
+            RenderEntry(Entry)
+            Changed = True
+        Next
+        If Changed Then LayoutMessages()
+    End Sub
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
         DragStart = e.GetPosition(Me)
         DragOffset = New Point(Canvas.GetLeft(ImgMascot), Canvas.GetTop(ImgMascot))
@@ -274,8 +290,13 @@ Public Class AgentMascot
 
     Private Function AddBubble(Text As String, IsUser As Boolean) As BubbleEntry
         Dim Host As New StackPanel()
+        Dim Viewer As New ScrollViewer With {
+            .Content = Host,
+            .VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            .Background = Brushes.Transparent}
         Dim Box As New Border With {
-            .Child = Host,
+            .Child = Viewer,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
             .MaxWidth = 320,
@@ -283,7 +304,7 @@ Public Class AgentMascot
             .BorderBrush = New MyColor(If(IsUser, "#D6DAFF", "#D8DCE8")),
             .BorderThickness = New Thickness(1)
         }
-        Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser}
+        Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser, .Viewer = Viewer}
         Entry.Raw.Append(Text)
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Entries.Add(Entry)
@@ -464,6 +485,8 @@ Public Class AgentMascot
     Private Sub LayoutMessages(Optional Animate As Boolean = False)
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
+        Dim VisibleCount As Integer = Math.Max(0, Entries.Count - HiddenNewest)
+        Dim Available As Double = Math.Max(80, AnchorY - 16)
         For Index As Integer = Entries.Count - 1 To 0 Step -1
             Dim Entry As BubbleEntry = Entries(Index)
             Dim Box As Border = Entry.Box
@@ -483,6 +506,11 @@ Public Class AgentMascot
             End If
             If Not WantVisible Then Continue For
             Box.Visibility = Visibility.Visible
+            If VisibleCount = 1 Then
+                Box.MaxHeight = Available
+            Else
+                Box.MaxHeight = Double.PositiveInfinity
+            End If
             Box.Measure(New Size(330, Double.PositiveInfinity))
             Dim Height As Double = Math.Max(20, Box.DesiredSize.Height)
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
@@ -511,6 +539,15 @@ Public Class AgentMascot
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
+        Dim VisibleCount As Integer = Math.Max(0, Entries.Count - HiddenNewest)
+        If VisibleCount = 1 Then
+            Dim Only As BubbleEntry = Entries(HiddenNewest)
+            If Only.Viewer IsNot Nothing AndAlso Only.Viewer.ScrollableHeight > 0 Then
+                Only.Viewer.ScrollToVerticalOffset(Only.Viewer.VerticalOffset - e.Delta / 3.0)
+                e.Handled = True
+                Return
+            End If
+        End If
         If Entries.Count <= 1 Then Return
         If e.Delta > 0 Then
             HiddenNewest = Math.Min(Entries.Count - 1, HiddenNewest + 1)
@@ -599,9 +636,11 @@ Public Class AgentMascot
         ModAgent.Instance.Send(Text,
             Sub(Full)
                 RunInUi(Sub()
-                           Reply.Raw.Append(Full)
-                           If Reply.Notes.Count > 0 Then Reply.Notes.Clear()
-                           RenderEntry(Reply)
+                           Reply.Pending.Append(Full)
+                           If Reply.Notes.Count > 0 Then
+                               Reply.Notes.Clear()
+                               RenderEntry(Reply)
+                           End If
                            LayoutMessages()
                        End Sub)
             End Sub,
