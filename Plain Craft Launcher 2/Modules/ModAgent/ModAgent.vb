@@ -155,7 +155,7 @@ Public Class ModAgent
         Try
             If NeedsConfirm(Tool) Then
                 If ConfirmHandler Is Nothing Then Return "需要用户确认后才能执行：" & Name
-                If Not ConfirmHandler(Name, ArgsText) Then Return "用户拒绝执行该操作"
+                If Not ConfirmHandler(Name, ModAgentTools.DescribeAction(Name, Args, ArgsText)) Then Return "用户拒绝执行该操作"
                 Confirmed.Add(Name)
             End If
             Return Tool.Run(Args)

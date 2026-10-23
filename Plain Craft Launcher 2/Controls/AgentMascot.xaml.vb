@@ -981,7 +981,7 @@ Public Class AgentMascot
         RunInUi(Sub()
                    Dim Detail As String = Args
                    If Detail.Length > 300 Then Detail = Detail.Substring(0, 300) & "…"
-                   Result = MyMsgBox("小瑟想要执行操作：" & Name & vbCrLf & vbCrLf & Detail, "AI 助理", "允许", "拒绝") = 1
+                   Result = MyMsgBox(Detail, "小瑟请求执行操作", "允许", "拒绝") = 1
                    Finished.Set()
                End Sub)
         Finished.WaitOne(120000)

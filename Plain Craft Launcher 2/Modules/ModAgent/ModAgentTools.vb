@@ -116,6 +116,18 @@ Public Module ModAgentTools
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
 
+        '删除实例
+        Dim DelSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {{"name", New JObject From {{"type", "string"}, {"description", "要删除的版本名称"}}}}},
+            {"required", New JArray From {"name"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "delete_instance",
+            .Description = "删除指定的 Minecraft 版本（移动文件夹到回收站）",
+            .Risk = 2,
+            .Schema = DelSchema,
+            .Run = Function(Args) DeleteInstance(Args)})
         '切换小瑟的表情
         Dim MoodSchema As New JObject From {
             {"type", "object"},
@@ -168,6 +180,38 @@ Public Module ModAgentTools
                    If FrmMain IsNot Nothing AndAlso FrmMain.FrmAgent IsNot Nothing Then FrmMain.FrmAgent.SetMood(Mood)
                End Sub)
         Return "已将小瑟的表情切换为 " & Mood
+    End Function
+    ''' <summary>把工具调用翻译成中文说明，用于确认弹窗。</summary>
+    Public Function DescribeAction(Name As String, Args As JObject, RawArgs As String) As String
+        Try
+            Select Case Name
+                Case "install_instance"
+                    Dim Loader As String = If(Args("loader") Is Nothing, "vanilla", Args("loader").ToString())
+                    Dim LoaderText As String = If(Loader = "vanilla", "原版", Loader)
+                    Return "安装 Minecraft " & Args("version")?.ToString() & "（" & LoaderText & "）" &
+                           If(Args("name") Is Nothing, "", "，版本名：" & Args("name").ToString())
+                Case "delete_instance"
+                    Return "删除版本「" & Args("name")?.ToString() & "」，文件夹会被移入回收站"
+                Case "launch_game"
+                    Return "启动当前选中的 Minecraft 版本"
+                Case "set_memory"
+                    Return "把内存分配设置为 " & Args("mb")?.ToString() & " MB"
+                Case "open_page"
+                    Return "切换启动器页面到「" & Args("page")?.ToString() & "」"
+                Case "web_fetch"
+                    Return "访问网页：" & Args("url")?.ToString()
+                Case "read_log"
+                    Return "读取启动器日志"
+                Case "set_mascot_mood"
+                    Return "切换小瑟的表情为「" & Args("mood")?.ToString() & "」"
+                Case Else
+                    Dim Text As String = If(RawArgs, "")
+                    If Text.Length > 300 Then Text = Text.Substring(0, 300) & "…"
+                    Return Name & If(String.IsNullOrWhiteSpace(Text), "", "：" & Text)
+            End Select
+        Catch
+            Return Name
+        End Try
     End Function
     Private Function GetLauncherState() As String
         Try
@@ -257,8 +301,16 @@ Public Module ModAgentTools
         Dim Loader As String = If(Args("loader") Is Nothing, "vanilla", Args("loader").ToString().ToLower())
         Dim LoaderVersion As String = If(Args("loaderVersion") Is Nothing, "", Args("loaderVersion").ToString())
         Dim Components As McComponents
-        If Loader = "forge" OrElse Loader = "neoforge" Then
-            Return "暂不支持自动安装 Forge/NeoForge，请到 下载 → 安装 页面手动选择加载器版本"
+        Dim ForgeEntry As DlForgeVersionEntry = Nothing
+        Dim NeoEntry As DlNeoForgeListEntry = Nothing
+        If Loader = "forge" Then
+            ForgeEntry = PickForgeVersion(Version, LoaderVersion)
+            If ForgeEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 Forge 版本"
+            Components = New McComponents(Version, Nothing, ForgeEntry.VersionName, Nothing, Nothing, Nothing, Nothing, Nothing)
+        ElseIf Loader = "neoforge" Then
+            NeoEntry = PickNeoForgeVersion(Version, LoaderVersion)
+            If NeoEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 NeoForge 版本"
+            Components = New McComponents(Version, Nothing, Nothing, NeoEntry.VersionName, Nothing, Nothing, Nothing, Nothing)
         End If
         If Loader = "fabric" Then
             If DlFabricListLoader.State <> LoadState.Finished Then
@@ -291,7 +343,7 @@ Public Module ModAgentTools
             End If
             If Chosen Is Nothing Then Return "未找到指定的 Fabric 版本：" & LoaderVersion
             Components = New McComponents(Version, Nothing, Nothing, Nothing, Chosen, Nothing, Nothing, Nothing)
-        Else
+        ElseIf Loader <> "forge" AndAlso Loader <> "neoforge" Then
             Components = New McComponents(Version, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing)
         End If
         Dim Success As Boolean = False
@@ -302,7 +354,9 @@ Public Module ModAgentTools
                            .NewInstanceName = Name,
                            .InstanceFolder = Folder,
                            .Components = Components,
-                           .MinecraftJson = Url
+                           .MinecraftJson = Url,
+                           .ForgeEntry = ForgeEntry,
+                           .NeoForgeEntry = NeoEntry
                        }
                        Success = McInstallStart(Request)
                    Catch
@@ -314,6 +368,80 @@ Public Module ModAgentTools
         If Success Then Return "已开始安装 " & Name & "，可在任务列表查看进度"
         Return "启动安装失败。可能原因：版本列表获取失败、磁盘空间不足或网络异常；" &
                "可以让用户稍后重试，或在 设置 → 启动器 → 日志 中查看具体错误。"
+    End Function
+    Private Function PickForgeVersion(McVersion As String, Want As String) As DlForgeVersionEntry
+        Try
+            Dim Task As New LoaderTask(Of String, List(Of DlForgeVersionEntry))("AgentForgeList", AddressOf DlForgeVersionMain)
+            Task.Start(McVersion)
+            Task.WaitForExit(60000)
+            If Task.State <> LoadState.Finished OrElse Task.Output Is Nothing Then Return Nothing
+            Dim List As List(Of DlForgeVersionEntry) = Task.Output
+            If List.Count = 0 Then Return Nothing
+            If Not String.IsNullOrWhiteSpace(Want) Then
+                For Each Item In List
+                    If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
+                Next
+                Return Nothing
+            End If
+            For Each Item In List
+                If Item.IsRecommended Then Return Item
+            Next
+            Return List(0)
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    Private Function PickNeoForgeVersion(McVersion As String, Want As String) As DlNeoForgeListEntry
+        Try
+            If DlNeoForgeListLoader.State <> LoadState.Finished Then
+                DlNeoForgeListLoader.Start(0)
+                DlNeoForgeListLoader.WaitForExit(60000)
+            End If
+            If DlNeoForgeListLoader.State <> LoadState.Finished Then Return Nothing
+            Dim All As List(Of DlNeoForgeListEntry) = DlNeoForgeListLoader.Output.Value
+            If All Is Nothing Then Return Nothing
+            Dim Matched As New List(Of DlNeoForgeListEntry)
+            For Each Item In All
+                If Item.Inherit = McVersion Then Matched.Add(Item)
+            Next
+            If Matched.Count = 0 Then Return Nothing
+            If Not String.IsNullOrWhiteSpace(Want) Then
+                For Each Item In Matched
+                    If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
+                Next
+                Return Nothing
+            End If
+            For Each Item In Matched
+                If Not Item.IsBeta Then Return Item
+            Next
+            Return Matched(0)
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    Private Function DeleteInstance(Args As JObject) As String
+        Dim Name As String = Args("name")?.ToString()
+        If String.IsNullOrWhiteSpace(Name) Then Return "缺少 name 参数"
+        Dim Target As McInstance = Nothing
+        For Each Pair In McInstanceList
+            For Each Item In Pair.Value
+                If String.Equals(Item.Name, Name, StringComparison.OrdinalIgnoreCase) Then Target = Item
+            Next
+        Next
+        If Target Is Nothing Then Return "没有找到版本：" & Name
+        If McInstanceLock.IsLocked(Target) Then Return "该版本正在被修改，请稍后再删除"
+        Try
+            DirectoryUtils.Delete(Target.PathVersion, True)
+        Catch ex As Exception
+            Return "删除失败：" & ex.Message
+        End Try
+        RunInUi(Sub()
+                   LoaderFolderRun(McInstanceListLoader, McFolderSelected, LoaderFolderRunType.ForceRun, MaxDepth:=1, ExtraPath:="versions\")
+                   FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.Launch})
+               End Sub)
+        Return "已删除版本 " & Name & "（已放入回收站）"
     End Function
     Private Function LaunchGame() As String
         If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
