@@ -424,22 +424,6 @@ Public Class AgentMascot
             Entry.Host.Children.Clear()
             Entry.ShowingThinking = False
         End If
-        Try
-            RenderBlocks(Entry)
-        Catch ex As Exception
-            Logger.Warn(ex, "AI 消息渲染失败，回退为纯文本")
-            Entry.Host.Children.Clear()
-            Entry.Host.Children.Add(New TextBlock With {
-                .Text = Entry.Raw.ToString(),
-                .TextWrapping = TextWrapping.Wrap,
-                .FontSize = 13,
-                .LineHeight = 20,
-                .Foreground = New MyColor(51, 51, 51)})
-            Entry.DirtyContent = True
-        End Try
-    End Sub
-
-    Private Sub RenderBlocks(Entry As BubbleEntry)
         Dim Models As List(Of AgentBlock) = ParseBlocks(Entry.Raw.ToString())
         While Entry.Host.Children.Count > Models.Count
             Entry.Host.Children.RemoveAt(Entry.Host.Children.Count - 1)
@@ -451,16 +435,19 @@ Public Class AgentMascot
                 AnimateBlockAppear(Element)
             End If
             Dim Existing As UIElement = Entry.Host.Children(Index)
-            If Models(Index).Kind = 6 Then
+            If TypeOf Existing Is WrapPanel Then
+                UpdateBlockElement(Existing, Models(Index))
+            ElseIf Models(Index).Kind = 6 Then
                 Dim Holder = TryCast(Existing, FrameworkElement)
                 If Holder Is Nothing OrElse Not String.Equals(TryCast(Holder.Tag, String), Models(Index).Text) Then
                     Entry.Host.Children(Index) = CreateBlockElement(Models(Index))
                 End If
-            Else
-                UpdateBlockElement(Existing, Models(Index))
             End If
         Next
         Entry.DirtyContent = True
+        For Each Note In Entry.Notes
+            Entry.Host.Children.Add(BuildHintText(Note, 11))
+        Next
     End Sub
 
     Private Shared Sub AnimateBlockAppear(Block As UIElement)
@@ -553,36 +540,12 @@ Public Class AgentMascot
         If Model.Kind = 6 Then
             Return BuildTable(Model.Text)
         End If
-        Dim Block As New TextBlock With {
-            .TextWrapping = TextWrapping.Wrap,
-            .FontSize = If(Model.Kind = 1, If(Model.Level <= 1, 16.0, 14.5), 13.0),
-            .FontWeight = If(Model.Kind = 1, FontWeights.SemiBold, FontWeights.Normal),
-            .Foreground = New MyColor(If(Model.Kind = 3, 110, 51), If(Model.Kind = 3, 116, 51), If(Model.Kind = 3, 135, 51)),
+        Dim Panel As New WrapPanel With {
             .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 3, 24), Math.Min(Model.Level * 3, 24)), 1, 0, 1),
-            .LineHeight = 20}
-        Block.Tag = ""
-        Return Block
+            .HorizontalAlignment = HorizontalAlignment.Left}
+        Panel.Tag = 0
+        Return Panel
     End Function
-
-    Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
-        Dim Border1 As Border = TryCast(Element, Border)
-        If Border1 IsNot Nothing AndAlso Model.Kind = 4 Then
-            Dim Inner As TextBlock = TryCast(Border1.Child, TextBlock)
-            If Inner IsNot Nothing AndAlso Not String.Equals(Inner.Text, Model.Text) Then Inner.Text = Model.Text
-            Return
-        End If
-        Dim Block As TextBlock = TryCast(Element, TextBlock)
-        If Block Is Nothing Then Return
-        Dim Previous As String = TryCast(Block.Tag, String)
-        If String.Equals(Previous, Model.Text) Then Return
-        Block.Tag = Model.Text
-        Block.Inlines.Clear()
-        If Model.Kind = 2 Then
-            AddInline(Block, Model.Text)
-        Else
-            AddInline(Block, Model.Text)
-        End If
-    End Sub
 
     Private Shared Function BuildTable(Text As String) As UIElement
         Dim Rows As New List(Of List(Of String))
@@ -599,12 +562,12 @@ Public Class AgentMascot
         Next
         If Rows.Count = 0 Then Return New Border With {.Height = 1}
         Dim Columns As Integer = Rows.Max(Function(R) R.Count)
-        Dim TableGrid As New Grid()
+        Dim Grid As New Grid()
         For C As Integer = 0 To Columns - 1
-            TableGrid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
+            Grid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
         Next
         For R As Integer = 0 To Rows.Count - 1
-            TableGrid.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
+            Grid.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
             For C As Integer = 0 To Columns - 1
                 Dim Content As String = If(C < Rows(R).Count, Rows(R)(C), "")
                 Dim Cell As New TextBlock With {
@@ -620,13 +583,13 @@ Public Class AgentMascot
                     .BorderBrush = New MyColor(228, 231, 240),
                     .BorderThickness = New Thickness(0, 0, If(C = Columns - 1, 0, 1), If(R = Rows.Count - 1, 0, 1)),
                     .Background = If(R = 0, CType(New MyColor(246, 247, 251), Brush), Brushes.Transparent)}
-                TableGrid.SetRow(Holder, R)
-                TableGrid.SetColumn(Holder, C)
-                TableGrid.Children.Add(Holder)
+                Grid.SetRow(Holder, R)
+                Grid.SetColumn(Holder, C)
+                Grid.Children.Add(Holder)
             Next
         Next
         Dim Wrapper As New Border With {
-            .Child = TableGrid,
+            .Child = Grid,
             .BorderBrush = New MyColor(228, 231, 240),
             .BorderThickness = New Thickness(1),
             .CornerRadius = New CornerRadius(4),
@@ -635,6 +598,38 @@ Public Class AgentMascot
             .Tag = Text}
         Return Wrapper
     End Function
+    Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
+        Dim Panel As WrapPanel = TryCast(Element, WrapPanel)
+        If Panel Is Nothing Then Return
+        Dim Display As String = ""
+        Dim Styles As List(Of Integer) = BuildInlineStyles(Model.Text, Display)
+        Dim Rendered As Integer = If(Panel.Tag Is Nothing, 0, CInt(Panel.Tag))
+        If Rendered >= Display.Length Then Return
+        Dim Size As Double = If(Model.Kind = 1, If(Model.Level <= 1, 16.0, 14.5), 13.0)
+        Dim Weight As FontWeight = If(Model.Kind = 1, FontWeights.SemiBold, FontWeights.Normal)
+        Dim ForeColor As Color = CType(If(Model.Kind = 3, New MyColor(110, 116, 135), New MyColor(51, 51, 51)), Color)
+        Dim Index As Integer = Rendered
+        While Index < Display.Length
+            Dim Length As Integer = NextUnit(Display, Index)
+            Dim Piece As String = Display.Substring(Index, Length)
+            Dim Style As Integer = If(Index < Styles.Count, Styles(Index), 0)
+            Dim CharBlock As New TextBlock With {
+                .Text = Piece,
+                .FontSize = Size,
+                .FontWeight = If(Style = 1, FontWeights.Bold, Weight),
+                .Foreground = New SolidColorBrush(ForeColor),
+                .TextWrapping = TextWrapping.NoWrap}
+            If Style = 2 Then
+                CharBlock.FontFamily = New FontFamily("Consolas")
+                CharBlock.Foreground = New SolidColorBrush(CType(New MyColor(90, 96, 120), Color))
+            End If
+            Panel.Children.Add(CharBlock)
+            AnimateCharAppear(CharBlock)
+            Index += Length
+        End While
+        CompactPanel(Panel)
+        Panel.Tag = Display.Length
+    End Sub
 
     Private Shared Function BuildInlineStyles(Text As String, ByRef Display As String) As List(Of Integer)
         Dim Styles As New List(Of Integer)

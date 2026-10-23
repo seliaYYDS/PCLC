@@ -54,6 +54,35 @@ Public Module ModAgentLlm
 
         Try
             Using Response = CType(Request.GetResponse(), HttpWebResponse)
+                Dim IsSse As Boolean = If(Response.ContentType, "").Contains("event-stream")
+                Logger.Info($"[AgentLlm] contentType={Response.ContentType} sse={IsSse}")
+                If Not IsSse Then
+                    Using Whole As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
+                        Dim RawBody As String = Whole.ReadToEnd()
+                        Dim JsonAll As JObject = JObject.Parse(RawBody)
+                        Dim Msg = TryCast(JsonAll("choices")?.Item(0)?("message"), JObject)
+                        If Msg IsNot Nothing Then
+                            Dim TextToken = Msg("content")
+                            Dim Full As String = ExtractText(TextToken)
+                            If Not String.IsNullOrEmpty(Full) Then
+                                Content.Append(Full)
+                                OnDelta(Full)
+                            End If
+                            Dim CallsAll = TryCast(Msg("tool_calls"), JArray)
+                            If CallsAll IsNot Nothing Then
+                                For Each Item In CallsAll
+                                    Dim Idx As String = ToolCalls.Count.ToString()
+                                    ToolCalls(Idx) = New JObject From {
+                                        {"id", Item("id")?.ToString()},
+                                        {"name", Item("function")?("name")?.ToString()},
+                                        {"arguments", Item("function")?("arguments")?.ToString()}}
+                                Next
+                            End If
+                        End If
+                    End Using
+                    Logger.Info($"[AgentLlm] content={Content.Length} tools={ToolCalls.Count}")
+        Return BuildMessage(Content, ToolCalls)
+                End If
                 Using Reader As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
                     Do While True
                         Dim Line As String = Reader.ReadLine()
@@ -73,7 +102,7 @@ Public Module ModAgentLlm
                         Dim Delta = TryCast(Choices(0)("delta"), JObject)
                         If Delta Is Nothing Then Continue Do
 
-                        Dim Text As String = If(Delta("content") Is Nothing, Nothing, Delta("content").ToString())
+                        Dim Text As String = ExtractText(Delta("content"))
                         If Not String.IsNullOrEmpty(Text) Then
                             Content.Append(Text)
                             OnDelta(Text)
@@ -115,6 +144,10 @@ Public Module ModAgentLlm
             CurrentRequest = Nothing
         End Try
 
+        Return BuildMessage(Content, ToolCalls)
+    End Function
+
+    Private Function BuildMessage(Content As StringBuilder, ToolCalls As JObject) As JObject
         Dim Message As New JObject From {{"role", "assistant"}, {"content", Content.ToString()}}
         If ToolCalls.Count > 0 Then
             Dim Array As New JArray()
@@ -132,6 +165,23 @@ Public Module ModAgentLlm
             Message("tool_calls") = Array
         End If
         Return Message
+    End Function
+
+
+    Private Function ExtractText(Token As JToken) As String
+        If Token Is Nothing Then Return ""
+        If Token.Type = JTokenType.Array Then
+            Dim Builder As New StringBuilder()
+            For Each Part In CType(Token, JArray)
+                If Part.Type = JTokenType.Object Then
+                    Builder.Append(If(Part("text")?.ToString(), ""))
+                Else
+                    Builder.Append(Part.ToString())
+                End If
+            Next
+            Return Builder.ToString()
+        End If
+        Return Token.ToString()
     End Function
 
 End Module
