@@ -33,16 +33,17 @@ Public Class MyRadioButton
     ''' <summary>是否显示自带的白色选中背景。</summary>
     Public Property ShowCheckedBackground As Boolean = True
 
-    ''' <summary>仅图标模式：让图标在按钮内水平居中。</summary>
+    ''' <summary>仅图标模式：图标固定占 56 宽的一列并居中，文字在其右侧。</summary>
     Public Sub SetLogoOnly(LogoOnly As Boolean)
-        If ShapeLogo Is Nothing Then Return
-        Dim Content As FrameworkElement = TryCast(ShapeLogo.Parent, FrameworkElement)
+        If ShapeLogo Is Nothing OrElse ColLogo Is Nothing Then Return
         If LogoOnly Then
+            ColLogo.Width = New GridLength(56)
+            ShapeLogo.HorizontalAlignment = HorizontalAlignment.Center
             ShapeLogo.Margin = New Thickness(0)
-            If Content IsNot Nothing Then Content.HorizontalAlignment = HorizontalAlignment.Center
         Else
+            ColLogo.Width = GridLength.Auto
+            ShapeLogo.HorizontalAlignment = HorizontalAlignment.Left
             ShapeLogo.Margin = New Thickness(12, 0, 0, 0)
-            If Content IsNot Nothing Then Content.HorizontalAlignment = HorizontalAlignment.Left
         End If
     End Sub
     ''' <summary>是否显示按钮文字（淡入淡出，按钮宽度固定所以图标不动）。</summary>

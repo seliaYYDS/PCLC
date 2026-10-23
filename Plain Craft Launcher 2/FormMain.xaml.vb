@@ -817,10 +817,12 @@ Public Class FormMain
             If Item Is Nothing Then Continue For
             If Vertical Then
                 Item.Width = 132
+                Item.SetLogoOnly(True)
                 Item.HorizontalAlignment = If(IsRight, HorizontalAlignment.Right, HorizontalAlignment.Left)
                 Item.Margin = New Thickness(0, 7, 0, 7)
             Else
                 Item.Width = Double.NaN
+                Item.SetLogoOnly(False)
                 Item.HorizontalAlignment = HorizontalAlignment.Center
                 Item.Margin = New Thickness(5, 0, 5, 0)
             End If
@@ -850,6 +852,19 @@ Public Class FormMain
         End If
     End Sub
 
+    '把横向的标题栏渐变转成纵向，供侧边栏使用
+    Private Shared Function MakeVerticalTitleBrush() As Brush
+        Try
+            If FrmMain Is Nothing OrElse FrmMain.PanTitle Is Nothing Then Return Nothing
+            Dim Source = TryCast(FrmMain.PanTitle.Background, LinearGradientBrush)
+            If Source IsNot Nothing AndAlso Source.GradientStops.Count >= 2 Then
+                Return New LinearGradientBrush(Source.GradientStops(0).Color, Source.GradientStops(Source.GradientStops.Count - 1).Color, New Point(0, 0), New Point(0, 1))
+            End If
+            Return FrmMain.PanTitle.Background
+        Catch
+            Return Nothing
+        End Try
+    End Function
     ''' <summary>实际的布局切换。</summary>
     Public Sub ApplyTitleBarLayout()
         Try
@@ -899,6 +914,7 @@ Public Class FormMain
                 BtnTitleClose.VerticalAlignment = VerticalAlignment.Center
                 BtnTitleClose.Margin = New Thickness(0, 0, 12, 0)
                 RectTitleSelect.VerticalAlignment = VerticalAlignment.Center
+                RectTitleSelect.CornerRadius = New CornerRadius(13.5)
                 RectTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
             Else
                 PanForm.RowDefinitions.Add(New RowDefinition With {.Height = New GridLength(1, GridUnitType.Star)})
@@ -920,7 +936,7 @@ Public Class FormMain
                     .VerticalAlignment = VerticalAlignment.Stretch,
                     .HorizontalAlignment = If(Position = 1, HorizontalAlignment.Left, HorizontalAlignment.Right),
                     .ClipToBounds = True,
-                    .Background = PanTitle.Background}
+                    .Background = MakeVerticalTitleBrush()}
                 Panel.SetZIndex(SideBar, 200)
                 Grid.SetRow(SideBar, 0)
                 Grid.SetColumn(SideBar, 0)
@@ -953,6 +969,7 @@ Public Class FormMain
                 SideBar.Children.Add(BtnTitleClose)
                 PanTitle.Visibility = Visibility.Collapsed
                 RectTitleSelect.VerticalAlignment = VerticalAlignment.Top
+                RectTitleSelect.CornerRadius = New CornerRadius(0)
                 RectTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
             End If
             UpdateTitleSelectPill(False)
