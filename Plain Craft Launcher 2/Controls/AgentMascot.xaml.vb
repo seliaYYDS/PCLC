@@ -22,6 +22,7 @@ Public Class AgentMascot
         Public Viewer As ScrollViewer
         Public Shift As New TranslateTransform()
         Public ScrollOffset As Double = 0
+        Public TargetOffset As Double = 0
         Public NeedScroll As Boolean = False
         Public RenderedBlocks As Integer = 0
         Public ShowingThinking As Boolean = False
@@ -175,6 +176,12 @@ Public Class AgentMascot
         Canvas.SetLeft(PanInput, CurrentX)
         Canvas.SetTop(PanInput, CurrentY)
 
+        '平滑滚动长消息
+        For Each Entry In Entries
+            If Entry.Viewer Is Nothing Then Continue For
+            If Math.Abs(Entry.TargetOffset - Entry.Viewer.VerticalOffset) < 0.5 Then Continue For
+            Entry.Viewer.ScrollToVerticalOffset(Entry.Viewer.VerticalOffset + (Entry.TargetOffset - Entry.Viewer.VerticalOffset) * 0.25)
+        Next
         Dim Offset As New Point(CurrentX - AnchorX, CurrentY - AnchorY)
         Samples.Add(New OffsetSample With {.Stamp = Now, .Offset = Offset})
         While Samples.Count > 0 AndAlso (Now - Samples(0).Stamp).TotalSeconds > 2
@@ -288,7 +295,7 @@ Public Class AgentMascot
         Dim Host As New StackPanel()
         Dim Viewer As New ScrollViewer With {
             .Content = Host,
-            .VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            .VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             .Background = Brushes.Transparent}
 
@@ -615,6 +622,11 @@ Public Class AgentMascot
             Dim Height As Double = If(Entry.NeedScroll, Available, Math.Max(20, Box.DesiredSize.Height))
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
+            If Bottom < 8 Then
+                Height = Math.Max(40, Height - (8 - Bottom))
+                Bottom = 8
+                If Entry.NeedScroll Then Entry.Box.Height = Height
+            End If
             Dim X As Double = If(Entry.IsUser, BaseX + (320 - Width), BaseX)
             Canvas.SetLeft(Box, X)
             If Animate Then
@@ -659,11 +671,12 @@ Public Class AgentMascot
             End If
         Next
         If BestEntry IsNot Nothing AndAlso BestOverflow > 0.5 Then
-            Dim Target As Double = BestEntry.Viewer.VerticalOffset - e.Delta / 3.0
-            If e.Delta > 0 AndAlso Target <= 0 Then
+            Dim Target As Double = BestEntry.TargetOffset - e.Delta / 3.0
+            If e.Delta > 0 AndAlso BestEntry.Viewer.VerticalOffset <= 0.5 AndAlso Target <= 0 Then
                 '已到顶部，交给隐藏逻辑
             Else
-                BestEntry.Viewer.ScrollToVerticalOffset(Math.Max(0, Math.Min(BestOverflow, Target)))
+                BestEntry.TargetOffset = Math.Max(0, Math.Min(BestOverflow, Target))
+                StartFollow()
                 e.Handled = True
                 Return
             End If
