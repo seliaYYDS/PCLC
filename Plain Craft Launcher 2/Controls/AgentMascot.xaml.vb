@@ -668,10 +668,8 @@ Public Class AgentMascot
             Sub(Full)
                 RunInUi(Sub()
                            Reply.Raw.Append(Full)
-                           If Reply.Notes.Count > 0 Then
-                               Reply.Notes.Clear()
-                               RenderEntry(Reply)
-                           End If
+                           Reply.Notes.Clear()
+                           RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
             End Sub,
