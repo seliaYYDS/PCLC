@@ -33,7 +33,11 @@ Public Class AgentMascot
         AddHandler ImgMascot.MouseMove, AddressOf Mascot_MouseMove
         AddHandler ImgMascot.MouseLeftButtonUp, AddressOf Mascot_MouseUp
         AddHandler Me.PreviewMouseWheel, AddressOf OnWheel
-        AddHandler SizeChanged, Sub() PositionMascot()
+        AddHandler SizeChanged, Sub()
+                                       PositionMascot()
+                                       PanMessageLayer.Width = Math.Max(0, ActualWidth)
+                                       PanMessageLayer.Height = Math.Max(0, ActualHeight)
+                                   End Sub
         AddHandler Me.Loaded, Sub() RefreshState()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
         FollowTimer.Start()
@@ -161,10 +165,18 @@ Public Class AgentMascot
             HideBubble()
             Return
         End If
-        HasPosition = False
+        UpdateTargets()
+        CurrentX = TargetX
+        CurrentY = TargetY
+        AnchorX = TargetX
+        AnchorY = TargetY
+        HasPosition = True
         PanInput.Visibility = Visibility.Visible
         PanMessageLayer.Visibility = Visibility.Visible
-        UpdateTargets()
+        Canvas.SetLeft(PanInput, CurrentX)
+        Canvas.SetTop(PanInput, CurrentY)
+        PanMessageLayer.Width = Math.Max(0, ActualWidth)
+        PanMessageLayer.Height = Math.Max(0, ActualHeight)
         If Messages.Count = 0 Then
             RenderHistory()
             If Messages.Count = 0 Then AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
@@ -199,8 +211,8 @@ Public Class AgentMascot
     End Function
 
     Private Sub LayoutMessages()
-        Dim BaseX As Double = CurrentX
-        Dim Bottom As Double = CurrentY - 8
+        Dim BaseX As Double = AnchorX
+        Dim Bottom As Double = AnchorY - 8
         For Index As Integer = Messages.Count - 1 To 0 Step -1
             Dim Box As Border = Messages(Index)
             If Messages.Count - 1 - Index < HiddenNewest Then
@@ -215,11 +227,10 @@ Public Class AgentMascot
             Canvas.SetTop(Box, Bottom)
             Bottom -= 6
         Next
-        Dim Top As Double = Math.Max(0, Bottom)
-        PanMessageLayer.Width = 340
-        PanMessageLayer.Height = Math.Max(0, CurrentY - 8 - Top)
-        Canvas.SetLeft(PanMessageLayer, BaseX)
-        Canvas.SetTop(PanMessageLayer, Top)
+        PanMessageLayer.Width = Math.Max(0, ActualWidth)
+        PanMessageLayer.Height = Math.Max(0, ActualHeight)
+        Canvas.SetLeft(PanMessageLayer, 0)
+        Canvas.SetTop(PanMessageLayer, 0)
     End Sub
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
