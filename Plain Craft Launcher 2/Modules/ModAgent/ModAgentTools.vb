@@ -97,6 +97,22 @@ Public Module ModAgentTools
             .Risk = 2,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) LaunchGame()})
+
+        '安装版本
+        Dim InstallSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"version", New JObject From {{"type", "string"}, {"description", "原版版本号，例如 1.20.1"}}},
+                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称，留空则与版本号相同"}}}
+            }},
+            {"required", New JArray From {"version"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "install_instance",
+            .Description = "安装指定原版 Minecraft 版本（如需装 Mod 加载器，请提示用户手动在下载页选择）",
+            .Risk = 2,
+            .Schema = InstallSchema,
+            .Run = Function(Args) InstallInstance(Args)})
     End Sub
 
     ''' <summary>把工具定义转成 OpenAI tools 数组。</summary>
@@ -198,6 +214,36 @@ Public Module ModAgentTools
         Return "已切换到" & Name
     End Function
 
+    Private Function InstallInstance(Args As JObject) As String
+        Dim Version As String = Args("version")?.ToString()
+        If String.IsNullOrWhiteSpace(Version) Then Return "缺少 version 参数（例如 1.20.1）"
+        Version = Version.Trim()
+        Dim Name As String = If(Args("name") Is Nothing, Version, Args("name").ToString().Trim())
+        If Name.Length = 0 Then Name = Version
+        If Name.IndexOfAny(IO.Path.GetInvalidFileNameChars()) >= 0 Then Return "版本名称包含非法字符"
+        Dim Folder As String = McFolderSelected & "versions\" & Name & "\"
+        If IO.Directory.Exists(Folder) Then Return "目标版本文件夹已存在：" & Folder
+        Dim Url As String = DlClientListGet(Version)
+        If String.IsNullOrWhiteSpace(Url) Then Return "未在版本列表中找到 " & Version
+        Dim Success As Boolean = False
+        Dim Done As New Threading.ManualResetEvent(False)
+        RunInUi(Sub()
+                   Try
+                       Dim Request As New McInstallRequest With {
+                           .NewInstanceName = Name,
+                           .InstanceFolder = Folder,
+                           .Components = New McComponents(Version, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing),
+                           .MinecraftJson = Url
+                       }
+                       Success = McInstallStart(Request)
+                   Catch
+                   Finally
+                       Done.Set()
+                   End Try
+               End Sub)
+        Done.WaitOne(20000)
+        Return If(Success, "已开始安装 " & Name & "，可在任务列表查看进度", "启动安装失败，请查看日志")
+    End Function
     Private Function LaunchGame() As String
         If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
         RunInUi(Sub() McLaunchStart())
