@@ -561,31 +561,97 @@ Public Module ModAgentTools
             Dim Task As New LoaderTask(Of String, List(Of DlForgeVersionEntry))("AgentForgeList", AddressOf DlForgeVersionMain)
             Task.Start(McVersion)
             Task.WaitForExit(180000)
-            If Task.State = LoadState.Failed Then
-                LastInstallError = "获取 Forge 版本列表失败：" & If(Task.Error Is Nothing, "未知错误", Task.Error.Message)
-                Logger.Warn(Task.Error, "Agent 获取 Forge 版本列表失败")
-                Return Nothing
-            End If
-            If Task.State <> LoadState.Finished OrElse Task.Output Is Nothing Then
-                LastInstallError = "获取 Forge 版本列表超时或未完成（状态：" & Task.State.ToString() & "）"
-                Return Nothing
-            End If
-            Dim List As List(Of DlForgeVersionEntry) = Task.Output
-            If List.Count = 0 Then
-                LastInstallError = "Forge 版本列表为空（" & McVersion & " 可能没有 Forge 版本）"
-                Return Nothing
+            Dim List As List(Of DlForgeVersionEntry) = Nothing
+            If Task.State = LoadState.Finished Then List = Task.Output
+            If List Is Nothing OrElse List.Count = 0 Then
+                Logger.Warn(Task.Error, "启动器加载器未能获取 Forge 版本列表，改走 BMCLAPI 直连")
+                Dim Fallback As DlForgeVersionEntry = FetchForgeFromApi(McVersion, Want)
+                If Fallback Is Nothing Then
+                    LastInstallError = "启动器与直连都没能获取 Forge 版本列表（加载状态：" & Task.State.ToString() & "）"
+                    Return Nothing
+                End If
+                Return Fallback
             End If
             If Not String.IsNullOrWhiteSpace(Want) Then
                 For Each Item In List
                     If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
                 Next
+                LastInstallError = "版本列表中没有指定的 Forge 版本：" & Want
                 Return Nothing
             End If
             For Each Item In List
                 If Item.IsRecommended Then Return Item
             Next
             Return List(0)
-        Catch
+        Catch ex As Exception
+            Logger.Warn(ex, "获取 Forge 版本异常，改走 BMCLAPI 直连")
+            Dim Fallback As DlForgeVersionEntry = FetchForgeFromApi(McVersion, Want)
+            If Fallback Is Nothing Then LastInstallError = "获取 Forge 版本异常：" & ex.Message
+            Return Fallback
+        End Try
+    End Function
+
+    ''' <summary>直接查询 BMCLAPI 的 Forge 版本，用于启动器加载器失败时兜底。</summary>
+    Private Function FetchForgeFromApi(McVersion As String, Want As String) As DlForgeVersionEntry
+        Try
+            Dim Url As String = "https://bmclapi2.bangbang93.com/forge/minecraft/" & McVersion
+            Dim Json As JArray = NetRequestByClientRetry(Url, Encoding:=System.Text.Encoding.UTF8, RequireJson:=True).DeserializeJson()
+            If Json Is Nothing OrElse Json.Count = 0 Then Return Nothing
+            Dim Best As DlForgeVersionEntry = Nothing
+            For Each Item In Json
+                Dim Ver As String = Item("version")?.ToString()
+                If String.IsNullOrWhiteSpace(Ver) Then Continue For
+                Try
+                    Dim Entry As New DlForgeVersionEntry(Ver, Item("branch")?.ToString(), McVersion) With {.Category = "installer"}
+                    If Not String.IsNullOrWhiteSpace(Want) AndAlso String.Equals(Entry.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Entry
+                    If Best Is Nothing OrElse Entry.Version > Best.Version Then Best = Entry
+                Catch
+                End Try
+            Next
+            Return Best
+        Catch ex As Exception
+            Logger.Warn(ex, "直连获取 Forge 版本失败")
+            Return Nothing
+        End Try
+    End Function
+
+    Private Function FetchNeoForgeFromApi(McVersion As String, Want As String) As DlNeoForgeListEntry
+        Try
+            Dim Best As DlNeoForgeListEntry = Nothing
+            For Each Url In {
+                "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge",
+                "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge"}
+                Dim Json As JObject = Nothing
+                Try
+                    Json = NetRequestByClientRetry(Url, Encoding:=System.Text.Encoding.UTF8, RequireJson:=True).DeserializeJson()
+                Catch ex As Exception
+                    Logger.Warn(ex, "获取 NeoForge Maven 版本失败：" & Url)
+                    Continue For
+                End Try
+                Dim Versions As JArray = TryCast(Json("versions"), JArray)
+                If Versions Is Nothing Then Continue For
+                For Each Token In Versions
+                    Dim ApiName As String = Token.ToString()
+                    If String.IsNullOrWhiteSpace(ApiName) Then Continue For
+                    Try
+                        Dim Entry As New DlNeoForgeListEntry(ApiName)
+                        If Entry.Inherit <> McVersion Then Continue For
+                        If Not String.IsNullOrWhiteSpace(Want) AndAlso String.Equals(Entry.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Entry
+                        If Best Is Nothing Then
+                            Best = Entry
+                        ElseIf Best.IsBeta AndAlso Not Entry.IsBeta Then
+                            Best = Entry
+                        ElseIf Best.IsBeta = Entry.IsBeta AndAlso Entry.Version > Best.Version Then
+                            Best = Entry
+                        End If
+                    Catch
+                    End Try
+                Next
+            Next
+            If Best Is Nothing Then LastInstallError = "Maven 版本列表中没有适用于 " & McVersion & " 的 NeoForge 版本"
+            Return Best
+        Catch ex As Exception
+            Logger.Warn(ex, "直连获取 NeoForge 版本失败")
             Return Nothing
         End Try
     End Function
@@ -596,36 +662,34 @@ Public Module ModAgentTools
                 DlNeoForgeListLoader.Start(0)
                 DlNeoForgeListLoader.WaitForExit(180000)
             End If
-            If DlNeoForgeListLoader.State = LoadState.Failed Then
-                LastInstallError = "获取 NeoForge 版本列表失败：" & If(DlNeoForgeListLoader.Error Is Nothing, "未知错误", DlNeoForgeListLoader.Error.Message)
-                Return Nothing
+            Dim All As List(Of DlNeoForgeListEntry) = Nothing
+            If DlNeoForgeListLoader.State = LoadState.Finished Then All = DlNeoForgeListLoader.Output.Value
+            If All Is Nothing OrElse All.Count = 0 Then
+                Logger.Warn(DlNeoForgeListLoader.Error, "启动器加载器未能获取 NeoForge 列表，改走 Maven 直连")
+                Return FetchNeoForgeFromApi(McVersion, Want)
             End If
-            If DlNeoForgeListLoader.State <> LoadState.Finished Then
-                LastInstallError = "获取 NeoForge 版本列表超时或未完成（状态：" & DlNeoForgeListLoader.State.ToString() & "）"
-                Return Nothing
-            End If
-            Dim All As List(Of DlNeoForgeListEntry) = DlNeoForgeListLoader.Output.Value
-            If All Is Nothing Then Return Nothing
             Dim Matched As New List(Of DlNeoForgeListEntry)
             For Each Item In All
                 If Item.Inherit = McVersion Then Matched.Add(Item)
             Next
             If Matched.Count = 0 Then
-                LastInstallError = "NeoForge 版本列表中没有 " & McVersion & " 对应项"
-                Return Nothing
+                Logger.Warn($"NeoForge 列表中没有 {McVersion}，改走 Maven 直连")
+                Return FetchNeoForgeFromApi(McVersion, Want)
             End If
             If Not String.IsNullOrWhiteSpace(Want) Then
                 For Each Item In Matched
                     If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
                 Next
+                LastInstallError = "版本列表中没有指定的 NeoForge 版本：" & Want
                 Return Nothing
             End If
             For Each Item In Matched
                 If Not Item.IsBeta Then Return Item
             Next
             Return Matched(0)
-        Catch
-            Return Nothing
+        Catch ex As Exception
+            Logger.Warn(ex, "获取 NeoForge 版本异常，改走 Maven 直连")
+            Return FetchNeoForgeFromApi(McVersion, Want)
         End Try
     End Function
 
