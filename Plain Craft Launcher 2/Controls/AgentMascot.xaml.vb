@@ -13,8 +13,10 @@ Public Class AgentMascot
         Public Raw As New StringBuilder()
         Public IsUser As Boolean
         Public Notes As New List(Of String)
-        Public Pending As New StringBuilder()
-        Public Viewer As ScrollViewer
+        Public Shift As New TranslateTransform()
+        Public ScrollOffset As Double = 0
+        Public NeedScroll As Boolean = False
+        Public RenderedBlocks As Integer = 0
     End Class
 
     Private IsDragging As Boolean = False
@@ -26,7 +28,6 @@ Public Class AgentMascot
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
-    Private WithEvents TypingTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(22)}
 
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
@@ -69,7 +70,6 @@ Public Class AgentMascot
         Panel.SetZIndex(WheelCatcher, -1)
         PanMessageLayer.Children.Add(WheelCatcher)
         AddSway(PanInput, 3.0, 3.0)
-        TypingTimer.Start()
     End Sub
 
     Private ReadOnly Property MascotWidth As Double
@@ -195,18 +195,6 @@ Public Class AgentMascot
         Next
     End Sub
 
-    Private Sub TypingTimer_Tick(sender As Object, e As EventArgs) Handles TypingTimer.Tick
-        Dim Changed As Boolean = False
-        For Each Entry In Entries
-            If Entry.Pending.Length = 0 Then Continue For
-            Dim Take As Integer = 1
-            Entry.Raw.Append(Entry.Pending.ToString(0, Take))
-            Entry.Pending.Remove(0, Take)
-            RenderEntry(Entry)
-            Changed = True
-        Next
-        If Changed Then LayoutMessages()
-    End Sub
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
         DragStart = e.GetPosition(Me)
         DragOffset = New Point(Canvas.GetLeft(ImgMascot), Canvas.GetTop(ImgMascot))
@@ -290,13 +278,10 @@ Public Class AgentMascot
 
     Private Function AddBubble(Text As String, IsUser As Boolean) As BubbleEntry
         Dim Host As New StackPanel()
-        Dim Viewer As New ScrollViewer With {
-            .Content = Host,
-            .VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            .Background = Brushes.Transparent}
+        Host.RenderTransform = New TranslateTransform()
+
         Dim Box As New Border With {
-            .Child = Viewer,
+            .Child = Host,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
             .MaxWidth = 320,
@@ -304,7 +289,8 @@ Public Class AgentMascot
             .BorderBrush = New MyColor(If(IsUser, "#D6DAFF", "#D8DCE8")),
             .BorderThickness = New Thickness(1)
         }
-        Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser, .Viewer = Viewer}
+        Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser}
+        Entry.Shift = CType(Host.RenderTransform, TranslateTransform)
         Entry.Raw.Append(Text)
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Entries.Add(Entry)
@@ -319,6 +305,7 @@ Public Class AgentMascot
 
     Private Sub RenderEntry(Entry As BubbleEntry)
         Entry.Host.Children.Clear()
+        Entry.RenderedBlocks = 0
         If Entry.IsUser Then
             Entry.Host.Children.Add(New TextBlock With {
                 .Text = Entry.Raw.ToString(),
@@ -331,15 +318,33 @@ Public Class AgentMascot
         If Entry.Raw.Length = 0 Then
             Entry.Host.Children.Add(BuildHintText("思考中…", 12))
         Else
+            Dim Previous As Integer = Entry.RenderedBlocks
+            Dim Index As Integer = 0
             For Each Block In ParseMarkdown(Entry.Raw.ToString())
                 Entry.Host.Children.Add(Block)
+                If Index >= Previous Then AnimateBlockAppear(Block)
+                Index += 1
             Next
+            Entry.RenderedBlocks = Index
         End If
         For Each Note In Entry.Notes
             Entry.Host.Children.Add(BuildHintText(Note, 11))
         Next
     End Sub
 
+    Private Shared Sub AnimateBlockAppear(Block As UIElement)
+        Try
+            Dim Element = TryCast(Block, FrameworkElement)
+            If Element Is Nothing Then Return
+            Element.Opacity = 0
+            Dim Shift As New TranslateTransform(0, 6)
+            Element.RenderTransform = Shift
+            Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseInOut}
+            Element.BeginAnimation(UIElement.OpacityProperty, New DoubleAnimation(1, New Duration(TimeSpan.FromMilliseconds(180))) With {.EasingFunction = Ease})
+            Shift.BeginAnimation(TranslateTransform.YProperty, New DoubleAnimation(0, New Duration(TimeSpan.FromMilliseconds(180))) With {.EasingFunction = Ease})
+        Catch
+        End Try
+    End Sub
     Private Shared Function ParseMarkdown(Text As String) As List(Of UIElement)
         Dim Result As New List(Of UIElement)
         Dim Lines As String() = Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
@@ -485,7 +490,6 @@ Public Class AgentMascot
     Private Sub LayoutMessages(Optional Animate As Boolean = False)
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
-        Dim VisibleCount As Integer = Math.Max(0, Entries.Count - HiddenNewest)
         Dim Available As Double = Math.Max(80, AnchorY - 16)
         For Index As Integer = Entries.Count - 1 To 0 Step -1
             Dim Entry As BubbleEntry = Entries(Index)
@@ -506,13 +510,22 @@ Public Class AgentMascot
             End If
             If Not WantVisible Then Continue For
             Box.Visibility = Visibility.Visible
-            If VisibleCount = 1 Then
-                Box.MaxHeight = Available
+            '内容高度与视口
+            Dim ContentHeight As Double = MeasureContent(Entry)
+            Entry.NeedScroll = ContentHeight > Available
+            If Entry.NeedScroll Then
+                Box.Height = Available
+                Box.ClipToBounds = True
+                Entry.ScrollOffset = Math.Max(0, Math.Min(Entry.ScrollOffset, ContentHeight - Available))
+                Entry.Shift.Y = -Entry.ScrollOffset
             Else
-                Box.MaxHeight = Double.PositiveInfinity
+                Box.Height = Double.NaN
+                Box.ClipToBounds = False
+                Entry.ScrollOffset = 0
+                Entry.Shift.Y = 0
             End If
-            Box.Measure(New Size(330, Double.PositiveInfinity))
-            Dim Height As Double = Math.Max(20, Box.DesiredSize.Height)
+            Box.Measure(New Size(330, If(Entry.NeedScroll, Available, Double.PositiveInfinity)))
+            Dim Height As Double = If(Entry.NeedScroll, Available, Math.Max(20, Box.DesiredSize.Height))
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
             Dim X As Double = If(Entry.IsUser, BaseX + (320 - Width), BaseX)
@@ -537,24 +550,33 @@ Public Class AgentMascot
         Canvas.SetTop(WheelCatcher, AreaTop)
     End Sub
 
+    Private Shared Function MeasureContent(Entry As BubbleEntry) As Double
+        Try
+            Entry.Host.Measure(New Size(300, Double.PositiveInfinity))
+            Return Entry.Host.DesiredSize.Height + 14
+        Catch
+            Return 0
+        End Try
+    End Function
+
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
-        If Entries.Count > 0 Then
-            Dim Topmost As BubbleEntry = Nothing
-            For Each Entry In Entries
-                If Entry.Box.Visibility = Visibility.Visible Then
-                    Topmost = Entry
-                    Exit For
-                End If
-            Next
-            If Topmost IsNot Nothing AndAlso Topmost.Viewer IsNot Nothing AndAlso Topmost.Viewer.ScrollableHeight > 0 Then
-                If e.Delta > 0 AndAlso Topmost.Viewer.VerticalOffset <= 0 Then
-                    '已经滚到顶，继续上滚则隐藏最新消息
-                Else
-                    Topmost.Viewer.ScrollToVerticalOffset(Topmost.Viewer.VerticalOffset - e.Delta / 3.0)
-                    e.Handled = True
-                    Return
-                End If
+        Dim Topmost As BubbleEntry = Nothing
+        For Each Entry In Entries
+            If Entry.Box.Visibility = Visibility.Visible Then
+                Topmost = Entry
+                Exit For
+            End If
+        Next
+        If Topmost IsNot Nothing AndAlso Topmost.NeedScroll Then
+            Dim MaxOffset As Double = Math.Max(0, MeasureContent(Topmost) - Topmost.Box.Height)
+            If e.Delta > 0 AndAlso Topmost.ScrollOffset <= 0.5 Then
+                '已到顶部，继续上滚则交给隐藏逻辑
+            Else
+                Topmost.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, Topmost.ScrollOffset - e.Delta / 3.0))
+                Topmost.Shift.Y = -Topmost.ScrollOffset
+                e.Handled = True
+                Return
             End If
         End If
         If Entries.Count <= 1 Then Return
@@ -645,7 +667,7 @@ Public Class AgentMascot
         ModAgent.Instance.Send(Text,
             Sub(Full)
                 RunInUi(Sub()
-                           Reply.Pending.Append(Full)
+                           Reply.Raw.Append(Full)
                            If Reply.Notes.Count > 0 Then
                                Reply.Notes.Clear()
                                RenderEntry(Reply)
