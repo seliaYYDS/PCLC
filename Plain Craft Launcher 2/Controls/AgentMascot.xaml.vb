@@ -443,6 +443,12 @@ Public Class AgentMascot
             Entry.ShowingThinking = False
         End If
         Dim Models As List(Of AgentBlock) = ParseBlocks(Entry.Raw.ToString())
+        If Models.Count = 0 Then
+            Dim RawText As String = Entry.Raw.ToString()
+            If RawText.Trim().Length > 0 Then
+                Logger.Warn($"AI 消息解析为空，原文前 80 字：{RawText.Substring(0, Math.Min(80, RawText.Length))}")
+            End If
+        End If
         While Entry.Host.Children.Count > Models.Count
             Entry.Host.Children.RemoveAt(Entry.Host.Children.Count - 1)
         End While
@@ -1118,8 +1124,12 @@ Public Class AgentMascot
                                Reply.Raw.Append(vbCrLf & vbCrLf & "> " & Summary)
                            End If
                            Reply.Host.Children.Clear()
-                           RenderEntry(Reply)
-                           LayoutMessages()
+                           Try
+                               RenderEntry(Reply)
+                               LayoutMessages()
+                           Catch ex As Exception
+                               Logger.Warn(ex, "AI 结束渲染失败")
+                           End Try
                        End Sub)
             End Sub,
             Sub(Message)
