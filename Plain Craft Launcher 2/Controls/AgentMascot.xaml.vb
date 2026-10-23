@@ -26,7 +26,7 @@ Public Class AgentMascot
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
-    Private WithEvents TypingTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(18)}
+    Private WithEvents TypingTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(22)}
 
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
@@ -199,7 +199,7 @@ Public Class AgentMascot
         Dim Changed As Boolean = False
         For Each Entry In Entries
             If Entry.Pending.Length = 0 Then Continue For
-            Dim Take As Integer = Math.Min(3, Entry.Pending.Length)
+            Dim Take As Integer = 1
             Entry.Raw.Append(Entry.Pending.ToString(0, Take))
             Entry.Pending.Remove(0, Take)
             RenderEntry(Entry)
@@ -539,13 +539,22 @@ Public Class AgentMascot
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
-        Dim VisibleCount As Integer = Math.Max(0, Entries.Count - HiddenNewest)
-        If VisibleCount = 1 Then
-            Dim Only As BubbleEntry = Entries(HiddenNewest)
-            If Only.Viewer IsNot Nothing AndAlso Only.Viewer.ScrollableHeight > 0 Then
-                Only.Viewer.ScrollToVerticalOffset(Only.Viewer.VerticalOffset - e.Delta / 3.0)
-                e.Handled = True
-                Return
+        If Entries.Count > 0 Then
+            Dim Topmost As BubbleEntry = Nothing
+            For Each Entry In Entries
+                If Entry.Box.Visibility = Visibility.Visible Then
+                    Topmost = Entry
+                    Exit For
+                End If
+            Next
+            If Topmost IsNot Nothing AndAlso Topmost.Viewer IsNot Nothing AndAlso Topmost.Viewer.ScrollableHeight > 0 Then
+                If e.Delta > 0 AndAlso Topmost.Viewer.VerticalOffset <= 0 Then
+                    '已经滚到顶，继续上滚则隐藏最新消息
+                Else
+                    Topmost.Viewer.ScrollToVerticalOffset(Topmost.Viewer.VerticalOffset - e.Delta / 3.0)
+                    e.Handled = True
+                    Return
+                End If
             End If
         End If
         If Entries.Count <= 1 Then Return
