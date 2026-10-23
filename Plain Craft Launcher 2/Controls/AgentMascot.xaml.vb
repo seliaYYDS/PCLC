@@ -792,14 +792,11 @@ Public Class AgentMascot
             Dim Inside As Boolean = Position.X >= Left AndAlso Position.X <= Left + Entry.Box.ActualWidth AndAlso
                                     Position.Y >= Top AndAlso Position.Y <= Top + Entry.Box.ActualHeight
             Dim Overflow As Double = Entry.Viewer.ScrollableHeight
+            '只有鼠标悬停在超长消息上才接管滚动
             If Inside AndAlso Overflow > 0.5 Then
                 BestEntry = Entry
                 BestOverflow = Overflow
                 Exit For
-            End If
-            If Overflow > BestOverflow Then
-                BestOverflow = Overflow
-                BestEntry = Entry
             End If
         Next
         If BestEntry IsNot Nothing AndAlso BestOverflow > 0.5 Then
