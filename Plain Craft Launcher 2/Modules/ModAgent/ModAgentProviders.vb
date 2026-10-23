@@ -68,6 +68,8 @@ Public Module ModAgentProviders
             If Preset.Id = "custom" Then Return
             Settings.Set("AgentBaseUrl", Preset.BaseUrl)
             If Preset.Models.Length > 0 Then Settings.Set("AgentModel", Preset.Models(0))
+            '让设置页的输入框同步刷新
+            If FrmSetupAgent IsNot Nothing Then SettingService.RefreshSettings(FrmSetupAgent)
         Catch ex As Exception
             Logger.Warn(ex, "应用提供商默认值失败")
         End Try

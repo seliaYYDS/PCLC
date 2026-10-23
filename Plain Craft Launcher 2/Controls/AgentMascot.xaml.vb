@@ -1,3 +1,4 @@
+Imports System.Windows.Media.Animation
 Imports System.Windows.Media.Imaging
 
 ''' <summary>AI 助手「小瑟」的悬浮人偶与对话气泡。</summary>
@@ -17,6 +18,11 @@ Public Class AgentMascot
         AddHandler ImgMascot.MouseLeftButtonUp, AddressOf Mascot_MouseUp
         AddHandler SizeChanged, Sub() PositionMascot()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
+        Dim Sway As New DoubleAnimation(6, -6, New Duration(TimeSpan.FromSeconds(3.2))) With {
+            .AutoReverse = True,
+            .RepeatBehavior = RepeatBehavior.Forever,
+            .EasingFunction = New SineEase With {.EasingMode = EasingMode.EaseInOut}}
+        SwayTransform.BeginAnimation(TranslateTransform.XProperty, Sway)
     End Sub
 
     '工具执行前的确认（在 UI 线程弹窗，等待用户选择）
@@ -64,6 +70,8 @@ Public Class AgentMascot
         PositionBubble()
     End Sub
 
+    Private BubbleInited As Boolean = False
+
     Private Sub PositionBubble()
         If PanBubble Is Nothing Then Return
         Dim X As Double = Canvas.GetLeft(ImgMascot)
@@ -71,18 +79,30 @@ Public Class AgentMascot
         Dim MascotSize As Double = If(ImgMascot.ActualWidth > 0, ImgMascot.ActualWidth, 96)
         Dim BubbleWidth As Double = If(PanBubble.ActualWidth > 0, PanBubble.ActualWidth, 380)
         Dim BubbleHeight As Double = If(PanBubble.ActualHeight > 0, PanBubble.ActualHeight, 470)
-        '优先放在人偶右侧，空间不足则放左侧
         Dim BubbleLeft As Double
         If X + MascotSize + 10 + BubbleWidth <= ActualWidth - 8 Then
             BubbleLeft = X + MascotSize + 10
         Else
             BubbleLeft = Math.Max(8, X - BubbleWidth - 10)
         End If
-        '底边与人偶底部对齐
         Dim BubbleTop As Double = Y + MascotSize - BubbleHeight
         BubbleTop = Math.Max(8, Math.Min(ActualHeight - BubbleHeight - 8, BubbleTop))
-        Canvas.SetLeft(PanBubble, Math.Max(8, Math.Min(ActualWidth - BubbleWidth - 8, BubbleLeft)))
-        Canvas.SetTop(PanBubble, Math.Max(8, BubbleTop))
+        MoveBubbleTo(Math.Max(8, Math.Min(ActualWidth - BubbleWidth - 8, BubbleLeft)), Math.Max(8, BubbleTop))
+    End Sub
+
+    '让气泡平滑跟随，而不是瞬间钉住
+    Private Sub MoveBubbleTo(Left As Double, Top As Double)
+        If Not BubbleInited Then
+            PanBubble.BeginAnimation(Canvas.LeftProperty, Nothing)
+            PanBubble.BeginAnimation(Canvas.TopProperty, Nothing)
+            Canvas.SetLeft(PanBubble, Left)
+            Canvas.SetTop(PanBubble, Top)
+            BubbleInited = True
+            Return
+        End If
+        Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseOut}
+        PanBubble.BeginAnimation(Canvas.LeftProperty, New DoubleAnimation(Left, New Duration(TimeSpan.FromMilliseconds(340))) With {.EasingFunction = Ease})
+        PanBubble.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Top, New Duration(TimeSpan.FromMilliseconds(340))) With {.EasingFunction = Ease})
     End Sub
 
     '拖拽
@@ -126,6 +146,7 @@ Public Class AgentMascot
             PanBubble.Visibility = Visibility.Collapsed
             Return
         End If
+        BubbleInited = False
         PanBubble.Visibility = Visibility.Visible
         PositionBubble()
         If PanMessages.Children.Count = 0 Then
