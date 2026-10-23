@@ -65,7 +65,7 @@
                         <local:MyComboBox Grid.Column="1" local:SettingService.Key="AgentSafety">
                             <local:MyComboBoxItem local:SettingService.Value="0" Content="严格：所有操作都需确认" />
                             <local:MyComboBoxItem local:SettingService.Value="1" Content="标准：仅高风险操作需确认" />
-                            <local:MyComboBoxItem local:SettingService.Value="2" Content="宽松：同会话内首次确认后不再询问" />
+                            <local:MyComboBoxItem local:SettingService.Value="2" Content="宽松：所有操作自动执行，不再询问" />
                         </local:MyComboBox>
                     </Grid>
                     <local:MyCheckBox local:SettingService.Key="AgentAllowLocalNet" Text="允许小瑟访问本机与内网地址" Margin="-1,14,0,0" Height="22" />

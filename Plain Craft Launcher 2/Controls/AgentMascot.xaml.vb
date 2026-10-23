@@ -73,6 +73,8 @@ Public Class AgentMascot
     Private TargetLeft As Double = -1
     Private TargetTop As Double = -1
     Private HasPosition As Boolean = False
+    '每个气泡/输入框的独立滞后偏移
+    Private ReadOnly FollowLag As New List(Of TranslateTransform)
 
     Private Sub PositionBubble()
         If PanBubble Is Nothing Then Return
@@ -93,6 +95,19 @@ Public Class AgentMascot
         TargetTop = Math.Max(8, BubbleTop)
     End Sub
 
+    Private Sub UpdateFollowLag(DeltaX As Double, DeltaY As Double)
+        For Index As Integer = 0 To FollowLag.Count - 1
+            Dim Item = FollowLag(Index)
+            '不同的恢复速度，形成先后跟随
+            Dim Speed As Double = 0.75 - Math.Min(Index, 6) * 0.07
+            Item.X = (Item.X - DeltaX * (1 - Speed)) * Speed
+            Item.Y = (Item.Y - DeltaY * (1 - Speed)) * Speed
+            If Math.Abs(Item.X) < 0.2 AndAlso Math.Abs(Item.Y) < 0.2 Then
+                Item.X = 0
+                Item.Y = 0
+            End If
+        Next
+    End Sub
     Private Sub FollowTimer_Tick(sender As Object, e As EventArgs) Handles FollowTimer.Tick
         If PanBubble Is Nothing OrElse PanBubble.Visibility <> Visibility.Visible Then Return
         If TargetLeft < 0 Then Return
@@ -106,8 +121,9 @@ Public Class AgentMascot
         Dim CurrentTop As Double = Canvas.GetTop(PanBubble)
         If Double.IsNaN(CurrentLeft) Then CurrentLeft = TargetLeft
         If Double.IsNaN(CurrentTop) Then CurrentTop = TargetTop
-        Dim DeltaX As Double = (TargetLeft - CurrentLeft) * 0.18
-        Dim DeltaY As Double = (TargetTop - CurrentTop) * 0.18
+        Dim DeltaX As Double = (TargetLeft - CurrentLeft) * 0.22
+        Dim DeltaY As Double = (TargetTop - CurrentTop) * 0.22
+        UpdateFollowLag(DeltaX, DeltaY)
         If Math.Abs(DeltaX) < 0.4 AndAlso Math.Abs(DeltaY) < 0.4 Then
             Canvas.SetLeft(PanBubble, TargetLeft)
             Canvas.SetTop(PanBubble, TargetTop)
@@ -171,6 +187,7 @@ Public Class AgentMascot
 
     Private Sub ClearMessages()
         PanMessages.Children.Clear()
+        FollowLag.Clear()
         ModAgent.Instance.Clear()
         AddBubble("对话已清空。", False)
     End Sub
@@ -189,6 +206,7 @@ Public Class AgentMascot
         }
         PanMessages.Children.Add(Box)
         AddSway(Box, 3.0 + (PanMessages.Children.Count Mod 3) * 0.6, 2.4 + (PanMessages.Children.Count Mod 4) * 0.3)
+        PositionBubble()
         PanScroll.ScrollToEnd()
         Return Content
     End Function
@@ -231,11 +249,12 @@ Public Class AgentMascot
             End Sub)
     End Sub
 
-    Private Shared Sub AddSway(Target As FrameworkElement, Amplitude As Double, Seconds As Double)
+    Private Sub AddSway(Target As FrameworkElement, Amplitude As Double, Seconds As Double)
         Try
             If Target Is Nothing Then Return
             Dim Transform As New TranslateTransform()
             Target.RenderTransform = Transform
+            If Target IsNot PanInput Then FollowLag.Add(Transform)
             Dim Sway As New DoubleAnimation(Amplitude, -Amplitude, New Duration(TimeSpan.FromSeconds(Seconds))) With {
                 .AutoReverse = True,
                 .RepeatBehavior = RepeatBehavior.Forever,
