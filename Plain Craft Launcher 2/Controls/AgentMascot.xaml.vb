@@ -19,6 +19,7 @@ Public Class AgentMascot
         Public Raw As New StringBuilder()
         Public IsUser As Boolean
         Public Notes As New List(Of String)
+        Public Viewer As ScrollViewer
         Public Shift As New TranslateTransform()
         Public ScrollOffset As Double = 0
         Public NeedScroll As Boolean = False
@@ -285,10 +286,14 @@ Public Class AgentMascot
 
     Private Function AddBubble(Text As String, IsUser As Boolean) As BubbleEntry
         Dim Host As New StackPanel()
-        Host.RenderTransform = New TranslateTransform()
+        Dim Viewer As New ScrollViewer With {
+            .Content = Host,
+            .VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            .Background = Brushes.Transparent}
 
         Dim Box As New Border With {
-            .Child = Host,
+            .Child = Viewer,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
             .MaxWidth = 320,
@@ -297,7 +302,7 @@ Public Class AgentMascot
             .BorderThickness = New Thickness(1)
         }
         Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser}
-        Entry.Shift = CType(Host.RenderTransform, TranslateTransform)
+        Entry.Viewer = Viewer
         Entry.Raw.Append(Text)
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Entries.Add(Entry)
@@ -345,6 +350,9 @@ Public Class AgentMascot
                 AnimateBlockAppear(Element)
             End If
             UpdateBlockElement(Entry.Host.Children(Index), Models(Index))
+        Next
+        For Each Note In Entry.Notes
+            Entry.Host.Children.Add(BuildHintText(Note, 11))
         Next
     End Sub
 
@@ -450,6 +458,7 @@ Public Class AgentMascot
             AnimateCharAppear(CharBlock)
             Index += Length
         End While
+        CompactPanel(Panel)
         Panel.Tag = Model.Text.Length
     End Sub
 
@@ -470,6 +479,27 @@ Public Class AgentMascot
         Return 1
     End Function
 
+    Private Shared Sub CompactPanel(Panel As WrapPanel)
+        Try
+            If Panel.Children.Count <= 400 Then Return
+            Dim Builder As New StringBuilder()
+            Dim RemoveCount As Integer = 250
+            For Index As Integer = 0 To RemoveCount - 1
+                Dim Block = TryCast(Panel.Children(Index), TextBlock)
+                If Block IsNot Nothing Then Builder.Append(Block.Text)
+            Next
+            Dim Merged As New TextBlock With {
+                .Text = Builder.ToString(),
+                .FontSize = 13,
+                .Foreground = New MyColor(51, 51, 51),
+                .TextWrapping = TextWrapping.NoWrap}
+            For Index As Integer = RemoveCount - 1 To 0 Step -1
+                Panel.Children.RemoveAt(Index)
+            Next
+            Panel.Children.Insert(0, Merged)
+        Catch
+        End Try
+    End Sub
     Private Shared Sub AnimateCharAppear(CharBlock As TextBlock)
         Try
             CharBlock.Opacity = 0
@@ -577,13 +607,9 @@ Public Class AgentMascot
             If Entry.NeedScroll Then
                 Box.Height = Available
                 Box.ClipToBounds = True
-                Entry.ScrollOffset = Math.Max(0, Math.Min(Entry.ScrollOffset, ContentHeight - Available))
-                Entry.Shift.Y = -Entry.ScrollOffset
             Else
                 Box.Height = Double.NaN
                 Box.ClipToBounds = False
-                Entry.ScrollOffset = 0
-                Entry.Shift.Y = 0
             End If
             Box.Measure(New Size(330, If(Entry.NeedScroll, Available, Double.PositiveInfinity)))
             Dim Height As Double = If(Entry.NeedScroll, Available, Math.Max(20, Box.DesiredSize.Height))
@@ -622,42 +648,24 @@ Public Class AgentMascot
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
-        Dim Topmost As BubbleEntry = Nothing
-        For Each Entry In Entries
-            If Entry.Box.Visibility = Visibility.Visible Then
-                Topmost = Entry
-                Exit For
-            End If
-        Next
         Dim BestEntry As BubbleEntry = Nothing
         Dim BestOverflow As Double = 0
         For Each Entry In Entries
             If Entry.Box.Visibility <> Visibility.Visible Then Continue For
-            Dim Content As Double = MeasureContent(Entry)
-            Dim ViewportNow As Double = If(Entry.Box.ActualHeight > 0, Entry.Box.ActualHeight, Entry.Box.Height)
-            If Double.IsNaN(ViewportNow) Then Continue For
-            If Content - ViewportNow > BestOverflow Then
-                BestOverflow = Content - ViewportNow
+            If Entry.Viewer Is Nothing Then Continue For
+            If Entry.Viewer.ScrollableHeight > BestOverflow Then
+                BestOverflow = Entry.Viewer.ScrollableHeight
                 BestEntry = Entry
             End If
         Next
-        If BestEntry IsNot Nothing Then
-            Dim ContentHeight As Double = MeasureContent(BestEntry)
-            Logger.Info($"[AgentWheel] delta={e.Delta} content={ContentHeight:0} boxH={BestEntry.Box.ActualHeight:0} off={BestEntry.ScrollOffset:0}")
-            Dim Viewport As Double = If(BestEntry.Box.ActualHeight > 0, BestEntry.Box.ActualHeight, BestEntry.Box.Height)
-            If Double.IsNaN(Viewport) Then Viewport = 0
-            If ContentHeight > Viewport + 0.5 AndAlso Viewport > 0 Then
-                BestEntry.NeedScroll = True
-                BestEntry.Box.ClipToBounds = True
-                Dim MaxOffset As Double = Math.Max(0, ContentHeight - Viewport)
-                If e.Delta > 0 AndAlso BestEntry.ScrollOffset <= 0.5 Then
-                    ' 已到顶部，交给隐藏逻辑
-                Else
-                    BestEntry.ScrollOffset = Math.Max(0, Math.Min(MaxOffset, BestEntry.ScrollOffset - e.Delta / 3.0))
-                    BestEntry.Shift.Y = -BestEntry.ScrollOffset
-                    e.Handled = True
-                    Return
-                End If
+        If BestEntry IsNot Nothing AndAlso BestOverflow > 0.5 Then
+            Dim Target As Double = BestEntry.Viewer.VerticalOffset - e.Delta / 3.0
+            If e.Delta > 0 AndAlso Target <= 0 Then
+                '已到顶部，交给隐藏逻辑
+            Else
+                BestEntry.Viewer.ScrollToVerticalOffset(Math.Max(0, Math.Min(BestOverflow, Target)))
+                e.Handled = True
+                Return
             End If
         End If
         If Entries.Count <= 1 Then Return
