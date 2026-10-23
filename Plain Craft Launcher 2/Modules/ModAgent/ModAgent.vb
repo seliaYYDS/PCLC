@@ -59,7 +59,7 @@ Public Class ModAgent
                     Snapshot = CType(Raw.DeepClone(), JArray)
                 End SyncLock
 
-                Dim Message As JObject = ModAgentLlm.ChatOnce(Snapshot, ModAgentTools.BuildToolsJson())
+                Dim Message As JObject = ModAgentLlm.ChatStream(Snapshot, ModAgentTools.BuildToolsJson(), Sub(Chunk) OnText(Chunk))
                 Dim ToolCalls = TryCast(Message("tool_calls"), JArray)
                 If ToolCalls IsNot Nothing AndAlso ToolCalls.Count > 0 Then
                     SyncLock Sync
@@ -80,11 +80,9 @@ Public Class ModAgent
                     Continue Do
                 End If
 
-                Dim Content As String = Message("content")?.ToString()
                 SyncLock Sync
                     Raw.Add(Message)
                 End SyncLock
-                OnText(Content)
                 IsWaiting = False
                 OnDone()
                 Return

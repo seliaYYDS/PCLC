@@ -3,28 +3,22 @@ Imports System.Net
 Imports System.Text
 Imports Newtonsoft.Json.Linq
 
-''' <summary>OpenAI 兼容的对话请求（带工具调用）。</summary>
+''' <summary>OpenAI 兼容的流式对话请求（支持工具调用）。</summary>
 Public Module ModAgentLlm
 
     Private CurrentRequest As HttpWebRequest = Nothing
-    Private CurrentThread As Threading.Thread = Nothing
-
-    Public ReadOnly Property IsBusy As Boolean
-        Get
-            Return CurrentThread IsNot Nothing AndAlso CurrentThread.IsAlive
-        End Get
-    End Property
 
     Public Sub Cancel()
         Try
             If CurrentRequest IsNot Nothing Then CurrentRequest.Abort()
         Catch
         End Try
-        CurrentThread = Nothing
     End Sub
 
-    ''' <summary>发起一次对话请求，返回 message 对象（可能包含 tool_calls）。</summary>
-    Public Function ChatOnce(Messages As JArray, Tools As JArray) As JObject
+    ''' <summary>
+    ''' 发起一次流式对话，文本增量通过 OnDelta 回调；返回完整的 message 对象（可能含 tool_calls）。
+    ''' </summary>
+    Public Function ChatStream(Messages As JArray, Tools As JArray, OnDelta As Action(Of String)) As JObject
         Dim BaseUrl As String = ModAgentProviders.CurrentBaseUrl()
         Dim Model As String = ModAgentProviders.CurrentModel()
         Dim Key As String = Settings.Get(Of String)("AgentApiKey")
@@ -34,7 +28,8 @@ Public Module ModAgentLlm
         Dim Body As New JObject From {
             {"model", Model},
             {"messages", Messages},
-            {"temperature", 0.3}
+            {"temperature", 0.3},
+            {"stream", True}
         }
         If Tools IsNot Nothing AndAlso Tools.Count > 0 Then Body("tools") = Tools
 
@@ -42,8 +37,10 @@ Public Module ModAgentLlm
         CurrentRequest = Request
         Request.Method = "POST"
         Request.ContentType = "application/json"
+        Request.Accept = "text/event-stream"
         Request.Timeout = 120000
         Request.ReadWriteTimeout = 120000
+        Request.AllowReadStreamBuffering = False
         If Not String.IsNullOrWhiteSpace(Key) Then Request.Headers.Add("Authorization", "Bearer " & Key)
 
         Dim Data As Byte() = Encoding.UTF8.GetBytes(Body.ToString(Newtonsoft.Json.Formatting.None))
@@ -52,27 +49,89 @@ Public Module ModAgentLlm
             Stream.Write(Data, 0, Data.Length)
         End Using
 
+        Dim Content As New StringBuilder()
+        Dim ToolCalls As New JObject() 'index -> {id, name, arguments}
+
         Try
             Using Response = CType(Request.GetResponse(), HttpWebResponse)
                 Using Reader As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
-                    Dim Text As String = Reader.ReadToEnd()
-                    Dim Json As JObject = JObject.Parse(Text)
-                    Return CType(Json("choices")(0)("message"), JObject)
+                    Do While True
+                        Dim Line As String = Reader.ReadLine()
+                        If Line Is Nothing Then Exit Do
+                        If Not Line.StartsWith("data:") Then Continue Do
+                        Dim Payload As String = Line.Substring(5).Trim()
+                        If Payload = "[DONE]" Then Exit Do
+                        If Payload.Length = 0 Then Continue Do
+                        Dim Json As JObject
+                        Try
+                            Json = JObject.Parse(Payload)
+                        Catch
+                            Continue Do
+                        End Try
+                        Dim Choices = TryCast(Json("choices"), JArray)
+                        If Choices Is Nothing OrElse Choices.Count = 0 Then Continue Do
+                        Dim Delta = TryCast(Choices(0)("delta"), JObject)
+                        If Delta Is Nothing Then Continue Do
+
+                        Dim Text As String = If(Delta("content") Is Nothing, Nothing, Delta("content").ToString())
+                        If Not String.IsNullOrEmpty(Text) Then
+                            Content.Append(Text)
+                            OnDelta(Text)
+                        End If
+
+                        Dim Calls = TryCast(Delta("tool_calls"), JArray)
+                        If Calls IsNot Nothing Then
+                            For Each Item In CType(Calls, JArray)
+                                Dim Index As String = If(Item("index") Is Nothing, "0", Item("index").ToString())
+                                If ToolCalls(Index) Is Nothing Then
+                                    ToolCalls(Index) = New JObject From {{"id", ""}, {"name", ""}, {"arguments", ""}}
+                                End If
+                                Dim Entry = CType(ToolCalls(Index), JObject)
+                                If Item("id") IsNot Nothing Then Entry("id") = Item("id").ToString()
+                                Dim FunctionBody = TryCast(Item("function"), JObject)
+                                If FunctionBody IsNot Nothing Then
+                                    If FunctionBody("name") IsNot Nothing Then Entry("name") = Entry("name").ToString() & FunctionBody("name").ToString()
+                                    If FunctionBody("arguments") IsNot Nothing Then Entry("arguments") = Entry("arguments").ToString() & FunctionBody("arguments").ToString()
+                                End If
+                            Next
+                        End If
+                    Loop
                 End Using
             End Using
         Catch ex As WebException
             Dim Detail As String = ex.Message
-            If ex.Response IsNot Nothing Then
-                Using Reader As New StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8)
-                    Dim Text As String = Reader.ReadToEnd()
-                    If Text.Length > 400 Then Text = Text.Substring(0, 400)
-                    Detail &= "：" & Text
-                End Using
-            End If
+            Try
+                If ex.Response IsNot Nothing Then
+                    Using Reader As New StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8)
+                        Dim Text As String = Reader.ReadToEnd()
+                        If Text.Length > 400 Then Text = Text.Substring(0, 400)
+                        Detail &= "：" & Text
+                    End Using
+                End If
+            Catch
+            End Try
             Throw New Exception(Detail)
         Finally
             CurrentRequest = Nothing
         End Try
+
+        Dim Message As New JObject From {{"role", "assistant"}, {"content", Content.ToString()}}
+        If ToolCalls.Count > 0 Then
+            Dim Array As New JArray()
+            For Each Prop As JProperty In ToolCalls.Properties()
+                Dim Entry = CType(Prop.Value, JObject)
+                Array.Add(New JObject From {
+                    {"id", Entry("id").ToString()},
+                    {"type", "function"},
+                    {"function", New JObject From {
+                        {"name", Entry("name").ToString()},
+                        {"arguments", Entry("arguments").ToString()}
+                    }}
+                })
+            Next
+            Message("tool_calls") = Array
+        End If
+        Return Message
     End Function
 
 End Module

@@ -180,7 +180,7 @@ Public Class AgentMascot
     End Sub
 
     Private Sub UpdateReply(Reply As TextBlock, Text As String)
-        Reply.Text = Text
+        Reply.Text &= Text
         PanScroll.ScrollToEnd()
     End Sub
 
