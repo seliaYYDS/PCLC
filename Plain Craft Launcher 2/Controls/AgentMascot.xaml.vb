@@ -436,6 +436,12 @@ Public Class AgentMascot
                 AnimateBlockAppear(Element)
             End If
             Dim Existing As UIElement = Entry.Host.Children(Index)
+            Dim WantPanel As Boolean = Models(Index).Kind <> 4 AndAlso Models(Index).Kind <> 5 AndAlso Models(Index).Kind <> 6
+            If WantPanel <> TypeOf Existing Is WrapPanel Then
+                Dim Fresh As UIElement = CreateBlockElement(Models(Index))
+                Entry.Host.Children(Index) = Fresh
+                Existing = Fresh
+            End If
             If TypeOf Existing Is WrapPanel Then
                 UpdateBlockElement(Existing, Models(Index))
             ElseIf Models(Index).Kind = 6 Then
@@ -549,55 +555,70 @@ Public Class AgentMascot
     End Function
 
     Private Shared Function BuildTable(Text As String) As UIElement
-        Dim Rows As New List(Of List(Of String))
-        For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
-            Dim Trimmed As String = Line.Trim()
-            If Trimmed.Length = 0 Then Continue For
-            Dim Cells As New List(Of String)
-            For Each Cell In Trimmed.Trim("|"c).Split("|"c)
-                Cells.Add(Cell.Trim())
+        Try
+            Dim Rows As New List(Of List(Of String))
+            For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+                Dim Trimmed As String = Line.Trim()
+                If Trimmed.Length = 0 Then Continue For
+                Dim Cells As New List(Of String)
+                For Each Cell In Trimmed.Trim("|"c).Split("|"c)
+                    Cells.Add(Cell.Trim())
+                Next
+                Dim IsSeparator As Boolean = True
+                For Each Cell In Cells
+                    If Cell.Length = 0 Then IsSeparator = False : Exit For
+                    For Each Ch As Char In Cell
+                        If Ch <> "-"c AndAlso Ch <> ":"c Then IsSeparator = False : Exit For
+                    Next
+                    If Not IsSeparator Then Exit For
+                Next
+                If IsSeparator Then Continue For
+                Rows.Add(Cells)
             Next
-            Dim IsSeparator As Boolean = Cells.All(Function(C) C.Length > 0 AndAlso C.All(Function(Ch) Ch = "-"c OrElse Ch = ":"c))
-            If IsSeparator Then Continue For
-            Rows.Add(Cells)
-        Next
-        If Rows.Count = 0 Then Return New Border With {.Height = 1}
-        Dim Columns As Integer = Rows.Max(Function(R) R.Count)
-        Dim Grid As New Grid()
-        For C As Integer = 0 To Columns - 1
-            Grid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
-        Next
-        For R As Integer = 0 To Rows.Count - 1
-            Grid.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
+            If Rows.Count = 0 Then Return New TextBlock With {.Text = Text, .TextWrapping = TextWrapping.Wrap}
+            Dim Columns As Integer = 1
+            For Each Row In Rows
+                If Row.Count > Columns Then Columns = Math.Min(Row.Count, 8)
+            Next
+            Dim TableGrid As New Grid()
             For C As Integer = 0 To Columns - 1
-                Dim Content As String = If(C < Rows(R).Count, Rows(R)(C), "")
-                Dim Cell As New TextBlock With {
-                    .Text = Content,
-                    .FontSize = 12,
-                    .FontWeight = If(R = 0, FontWeights.SemiBold, FontWeights.Normal),
-                    .Foreground = New MyColor(60, 64, 80),
-                    .Margin = New Thickness(6, 3, 6, 3),
-                    .TextWrapping = TextWrapping.Wrap,
-                    .MaxWidth = 200}
-                Dim Holder As New Border With {
-                    .Child = Cell,
-                    .BorderBrush = New MyColor(228, 231, 240),
-                    .BorderThickness = New Thickness(0, 0, If(C = Columns - 1, 0, 1), If(R = Rows.Count - 1, 0, 1)),
-                    .Background = If(R = 0, CType(New MyColor(246, 247, 251), Brush), Brushes.Transparent)}
-                Grid.SetRow(Holder, R)
-                Grid.SetColumn(Holder, C)
-                Grid.Children.Add(Holder)
+                TableGrid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
             Next
-        Next
-        Dim Wrapper As New Border With {
-            .Child = Grid,
-            .BorderBrush = New MyColor(228, 231, 240),
-            .BorderThickness = New Thickness(1),
-            .CornerRadius = New CornerRadius(4),
-            .Margin = New Thickness(0, 3, 0, 3),
-            .HorizontalAlignment = HorizontalAlignment.Left,
-            .Tag = Text}
-        Return Wrapper
+            For R As Integer = 0 To Rows.Count - 1
+                TableGrid.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
+                For C As Integer = 0 To Columns - 1
+                    Dim Content As String = If(C < Rows(R).Count, Rows(R)(C), "")
+                    Dim Cell As New TextBlock With {
+                        .Text = Content,
+                        .FontSize = 12,
+                        .FontWeight = If(R = 0, FontWeights.SemiBold, FontWeights.Normal),
+                        .Foreground = New MyColor(60, 64, 80),
+                        .Margin = New Thickness(6, 3, 6, 3),
+                        .TextWrapping = TextWrapping.Wrap,
+                        .MaxWidth = 160}
+                    Dim Holder As New Border With {
+                        .Child = Cell,
+                        .BorderBrush = New MyColor(228, 231, 240),
+                        .BorderThickness = New Thickness(0, 0, If(C = Columns - 1, 0, 1), If(R = Rows.Count - 1, 0, 1)),
+                        .Background = If(R = 0, CType(New MyColor(246, 247, 251), Brush), Brushes.Transparent)}
+                    Grid.SetRow(Holder, R)
+                    Grid.SetColumn(Holder, C)
+                    TableGrid.Children.Add(Holder)
+                Next
+            Next
+            Logger.Info($"[AgentTable] rows={Rows.Count} cols={Columns}")
+            Return New Border With {
+                .Child = TableGrid,
+                .BorderBrush = New MyColor(228, 231, 240),
+                .BorderThickness = New Thickness(1),
+                .CornerRadius = New CornerRadius(4),
+                .Margin = New Thickness(0, 3, 0, 3),
+                .HorizontalAlignment = HorizontalAlignment.Left,
+                .Tag = Text}
+        Catch ex As Exception
+            Logger.Warn(ex, "表格渲染失败，回退为纯文本")
+            Return New TextBlock With {.Text = Text, .TextWrapping = TextWrapping.Wrap}
+        End Try
     End Function
     Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
         Dim Panel As WrapPanel = TryCast(Element, WrapPanel)
