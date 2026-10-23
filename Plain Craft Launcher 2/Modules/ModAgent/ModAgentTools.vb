@@ -293,7 +293,12 @@ Public Module ModAgentTools
             Catch
             End Try
             State("memory") = Ram
-            State("java") = Settings.Get(Of String)("LaunchArgumentJavaExe")
+            Dim JavaPath As String = ""
+            Try
+                JavaPath = Settings.Get(Of String)("LaunchArgumentJavaExe")
+            Catch
+            End Try
+            State("java") = JavaPath
             State("selectedInstance") = If(McInstanceSelected Is Nothing, Nothing, McInstanceSelected.Name)
             Return State.ToString(Newtonsoft.Json.Formatting.None)
         Catch ex As Exception
