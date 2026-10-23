@@ -23,6 +23,7 @@ Public Class AgentMascot
         Public ScrollOffset As Double = 0
         Public NeedScroll As Boolean = False
         Public RenderedBlocks As Integer = 0
+        Public ShowingThinking As Boolean = False
     End Class
 
     Private IsDragging As Boolean = False
@@ -321,9 +322,17 @@ Public Class AgentMascot
             Return
         End If
         If Entry.Raw.Length = 0 Then
-            Entry.Host.Children.Clear()
-            Entry.Host.Children.Add(BuildHintText("思考中…", 12))
+            If Not Entry.ShowingThinking Then
+                Entry.Host.Children.Clear()
+                Entry.Host.Children.Add(BuildHintText("思考中…", 12))
+                Entry.ShowingThinking = True
+            End If
             Return
+        End If
+        If Entry.ShowingThinking Then
+            '正文到达，移除“思考中”占位
+            Entry.Host.Children.Clear()
+            Entry.ShowingThinking = False
         End If
         Dim Models As List(Of AgentBlock) = ParseBlocks(Entry.Raw.ToString())
         While Entry.Host.Children.Count > Models.Count
