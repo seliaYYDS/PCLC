@@ -10,6 +10,7 @@ Public Class AgentMascot
 
     Private ReadOnly Messages As New List(Of Border)
     Private ReadOnly MessageIsUser As New List(Of Boolean)
+    Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
     Private HiddenNewest As Integer = 0
@@ -278,6 +279,7 @@ Public Class AgentMascot
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Messages.Add(Box)
         MessageIsUser.Add(IsUser)
+        MessageShown.Add(True)
         PanMessageLayer.Children.Add(Box)
         AddSway(Box, 3.0 + (Messages.Count Mod 3) * 0.6, 2.6 + (Messages.Count Mod 4) * 0.4)
         HiddenNewest = Math.Min(HiddenNewest, Math.Max(0, Messages.Count - 1))
@@ -290,10 +292,21 @@ Public Class AgentMascot
         Dim Bottom As Double = AnchorY - 8
         For Index As Integer = Messages.Count - 1 To 0 Step -1
             Dim Box As Border = Messages(Index)
-            If Messages.Count - 1 - Index < HiddenNewest Then
-                Box.Visibility = Visibility.Collapsed
-                Continue For
+            Dim WantVisible As Boolean = (Messages.Count - 1 - Index) >= HiddenNewest
+            Dim WasVisible As Boolean = If(Index < MessageShown.Count, MessageShown(Index), True)
+            If WantVisible <> WasVisible Then
+                While MessageShown.Count <= Index
+                    MessageShown.Add(True)
+                End While
+                MessageShown(Index) = WantVisible
+                If WantVisible Then
+                    Box.Visibility = Visibility.Visible
+                    FadeIn(Box, 140, 0)
+                Else
+                    FadeOut(Box, 120, Sub() Box.Visibility = Visibility.Collapsed)
+                End If
             End If
+            If Not WantVisible Then Continue For
             Box.Visibility = Visibility.Visible
             Box.Measure(New Size(330, Double.PositiveInfinity))
             Dim Height As Double = Math.Max(20, Box.DesiredSize.Height)
@@ -355,6 +368,7 @@ Public Class AgentMascot
         Next
         Messages.Clear()
         MessageIsUser.Clear()
+        MessageShown.Clear()
         Samples.Clear()
         HiddenNewest = 0
         ModAgent.Instance.Clear()
