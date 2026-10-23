@@ -91,12 +91,18 @@ Public Module ModAgentTools
             .Run = Function(Args) OpenPage(Args)})
 
         '启动游戏
+        Dim LaunchSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"instance", New JObject From {{"type", "string"}, {"description", "Instance name to launch; defaults to the selected instance."}}}
+            }}
+        }
         ToolList.Add(New AgentTool With {
             .Name = "launch_game",
-            .Description = "Launch the selected Minecraft instance.",
+            .Description = "Launch a Minecraft instance; pass instance to launch a specific one, otherwise the selected instance is used.",
             .Risk = 2,
-            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
-            .Run = Function(Args) LaunchGame()})
+            .Schema = LaunchSchema,
+            .Run = Function(Args) LaunchGame(Args)})
 
         '安装版本
         Dim InstallSchema As New JObject From {
@@ -739,10 +745,36 @@ Public Module ModAgentTools
         ModAgentChanges.Removed("版本", Name)
         Return "已删除版本 " & Name & "（已放入回收站）"
     End Function
-    Private Function LaunchGame() As String
-        If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
-        RunInUi(Sub() McLaunchStart())
-        Return "正在启动 " & McInstanceSelected.Name
+    Private Function LaunchGame(Args As JObject) As String
+        Dim Name As String = Args("instance")?.ToString()
+        Dim Target As McInstance = If(String.IsNullOrWhiteSpace(Name), McInstanceSelected, FindInstanceByName(Name))
+        If Target Is Nothing Then
+            If String.IsNullOrWhiteSpace(Name) Then Return "当前没有选中的版本，无法启动"
+            Return "没有找到版本：" & Name
+        End If
+        RunInUi(Sub()
+                   McInstanceSelected = Target
+                   McLaunchStart()
+               End Sub)
+        Return "正在启动 " & Target.Name
+    End Function
+
+    Private Function FindInstanceByName(Name As String) As McInstance
+        For Each Pair In McInstanceList
+            For Each Item In Pair.Value
+                If String.Equals(Item.Name, Name.Trim(), StringComparison.OrdinalIgnoreCase) Then Return Item
+            Next
+        Next
+        '列表尚未加载时直接从版本目录构造
+        Dim Folder As String = IO.Path.Combine(McFolderSelected, "versions", Name.Trim())
+        If IO.Directory.Exists(Folder) Then
+            Try
+                Return New McInstance(Folder & "\")
+            Catch ex As Exception
+                Logger.Warn(ex, "按目录构造实例失败：" & Folder)
+            End Try
+        End If
+        Return Nothing
     End Function
 
 
