@@ -419,7 +419,15 @@ Public Class AgentMascot
                 Entry.Host.Children.Add(Element)
                 AnimateBlockAppear(Element)
             End If
-            UpdateBlockElement(Entry.Host.Children(Index), Models(Index))
+            Dim Existing As UIElement = Entry.Host.Children(Index)
+            If TypeOf Existing Is WrapPanel Then
+                UpdateBlockElement(Existing, Models(Index))
+            ElseIf Models(Index).Kind = 6 Then
+                Dim Holder = TryCast(Existing, FrameworkElement)
+                If Holder Is Nothing OrElse Not String.Equals(TryCast(Holder.Tag, String), Models(Index).Text) Then
+                    Entry.Host.Children(Index) = CreateBlockElement(Models(Index))
+                End If
+            End If
         Next
         Entry.DirtyContent = True
         For Each Note In Entry.Notes
@@ -445,25 +453,39 @@ Public Class AgentMascot
         Dim Code As New StringBuilder()
         Dim InCode As Boolean = False
         Dim Fence3 As String = New String(ChrW(96), 3)
-        For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+        Dim Lines As String() = Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+        Dim Index As Integer = 0
+        While Index < Lines.Length
+            Dim Line As String = Lines(Index)
+            Index += 1
             If Line.TrimStart().StartsWith(Fence3) Then
                 If InCode Then
                     Result.Add(New AgentBlock With {.Kind = 4, .Text = Code.ToString().TrimEnd()})
                     Code.Clear()
                 End If
                 InCode = Not InCode
-                Continue For
+                Continue While
             End If
             If InCode Then
                 Code.AppendLine(Line)
-                Continue For
+                Continue While
             End If
-            If String.IsNullOrWhiteSpace(Line) Then Continue For
+            If String.IsNullOrWhiteSpace(Line) Then Continue While
             Dim Trimmed As String = Line.TrimStart()
             Dim Indent As Integer = Line.Length - Trimmed.Length
+            If Trimmed.StartsWith("|") Then
+                Dim Rows As New List(Of String)
+                Rows.Add(Trimmed.TrimEnd())
+                While Index < Lines.Length AndAlso Lines(Index).TrimStart().StartsWith("|")
+                    Rows.Add(Lines(Index).TrimStart().TrimEnd())
+                    Index += 1
+                End While
+                Result.Add(New AgentBlock With {.Kind = 6, .Text = String.Join(vbLf, Rows)})
+                Continue While
+            End If
             If Trimmed = "---" OrElse Trimmed = "***" Then
                 Result.Add(New AgentBlock With {.Kind = 5, .Text = ""})
-                Continue For
+                Continue While
             End If
             If Trimmed.StartsWith("#") Then
                 Dim Level As Integer = 0
@@ -478,7 +500,7 @@ Public Class AgentMascot
             Else
                 Result.Add(New AgentBlock With {.Kind = 0, .Text = Trimmed, .Level = Math.Min(Indent \ 2, 6)})
             End If
-        Next
+        End While
         If Code.Length > 0 Then Result.Add(New AgentBlock With {.Kind = 4, .Text = Code.ToString().TrimEnd()})
         Return Result
     End Function
@@ -500,6 +522,9 @@ Public Class AgentMascot
         If Model.Kind = 5 Then
             Return New Border With {.Height = 1, .Background = New MyColor(226, 229, 238), .Margin = New Thickness(0, 6, 0, 6)}
         End If
+        If Model.Kind = 6 Then
+            Return BuildTable(Model.Text)
+        End If
         Dim Panel As New WrapPanel With {
             .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 3, 24), Math.Min(Model.Level * 3, 24)), 1, 0, 1),
             .HorizontalAlignment = HorizontalAlignment.Left}
@@ -507,6 +532,57 @@ Public Class AgentMascot
         Return Panel
     End Function
 
+    Private Shared Function BuildTable(Text As String) As UIElement
+        Dim Rows As New List(Of List(Of String))
+        For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
+            Dim Trimmed As String = Line.Trim()
+            If Trimmed.Length = 0 Then Continue For
+            Dim Cells As New List(Of String)
+            For Each Cell In Trimmed.Trim("|"c).Split("|"c)
+                Cells.Add(Cell.Trim())
+            Next
+            Dim IsSeparator As Boolean = Cells.All(Function(C) C.Length > 0 AndAlso C.All(Function(Ch) Ch = "-"c OrElse Ch = ":"c))
+            If IsSeparator Then Continue For
+            Rows.Add(Cells)
+        Next
+        If Rows.Count = 0 Then Return New Border With {.Height = 1}
+        Dim Columns As Integer = Rows.Max(Function(R) R.Count)
+        Dim Grid As New Grid()
+        For C As Integer = 0 To Columns - 1
+            Grid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
+        Next
+        For R As Integer = 0 To Rows.Count - 1
+            Grid.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
+            For C As Integer = 0 To Columns - 1
+                Dim Content As String = If(C < Rows(R).Count, Rows(R)(C), "")
+                Dim Cell As New TextBlock With {
+                    .Text = Content,
+                    .FontSize = 12,
+                    .FontWeight = If(R = 0, FontWeights.SemiBold, FontWeights.Normal),
+                    .Foreground = New MyColor(60, 64, 80),
+                    .Margin = New Thickness(6, 3, 6, 3),
+                    .TextWrapping = TextWrapping.Wrap,
+                    .MaxWidth = 200}
+                Dim Holder As New Border With {
+                    .Child = Cell,
+                    .BorderBrush = New MyColor(228, 231, 240),
+                    .BorderThickness = New Thickness(0, 0, If(C = Columns - 1, 0, 1), If(R = Rows.Count - 1, 0, 1)),
+                    .Background = If(R = 0, New MyColor(246, 247, 251), Brushes.Transparent)}
+                Grid.SetRow(Holder, R)
+                Grid.SetColumn(Holder, C)
+                Grid.Children.Add(Holder)
+            Next
+        Next
+        Dim Wrapper As New Border With {
+            .Child = Grid,
+            .BorderBrush = New MyColor(228, 231, 240),
+            .BorderThickness = New Thickness(1),
+            .CornerRadius = New CornerRadius(4),
+            .Margin = New Thickness(0, 3, 0, 3),
+            .HorizontalAlignment = HorizontalAlignment.Left,
+            .Tag = Text}
+        Return Wrapper
+    End Function
     Private Shared Sub UpdateBlockElement(Element As UIElement, Model As AgentBlock)
         Dim Panel As WrapPanel = TryCast(Element, WrapPanel)
         If Panel Is Nothing Then Return
@@ -683,8 +759,10 @@ Public Class AgentMascot
     Private Sub LayoutMessages(Optional Animate As Boolean = False)
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
-        Dim Available As Double = Math.Max(80, AnchorY - 16)
-        Dim LongMax As Double = Math.Max(60, Available * 0.62)
+        Dim AreaTop As Double = 8
+        Dim AreaBottom As Double = Math.Max(AreaTop + 40, AnchorY - 8)
+        Dim Available As Double = AreaBottom - AreaTop
+        Dim LongMax As Double = Math.Max(60, Math.Min(Available * 0.62, Available))
         For Index As Integer = Entries.Count - 1 To 0 Step -1
             Dim Entry As BubbleEntry = Entries(Index)
             Dim Box As Border = Entry.Box
@@ -718,11 +796,6 @@ Public Class AgentMascot
             Dim Height As Double = If(Entry.NeedScroll, LongMax, Math.Max(20, Box.DesiredSize.Height))
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
-            If Bottom < 8 Then
-                Height = Math.Max(40, Height - (8 - Bottom))
-                Bottom = 8
-                If Entry.NeedScroll Then Entry.Box.Height = Height
-            End If
             Dim X As Double = If(Entry.IsUser, BaseX + (320 - Width), BaseX)
             Canvas.SetLeft(Box, X)
             If Animate Then
@@ -738,11 +811,11 @@ Public Class AgentMascot
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
         Canvas.SetLeft(PanMessageLayer, 0)
         Canvas.SetTop(PanMessageLayer, 0)
-        Dim AreaTop As Double = Math.Min(Bottom, AnchorY - 8)
+        PanMessageLayer.Clip = New RectangleGeometry(New Rect(0, AreaTop, Math.Max(0, ActualWidth), Math.Max(0, AreaBottom - AreaTop)))
         WheelCatcher.Width = 320
-        WheelCatcher.Height = Math.Max(0, (AnchorY - 8) - AreaTop)
+        WheelCatcher.Height = Math.Max(0, AreaBottom - Math.Min(Bottom, AreaBottom))
         Canvas.SetLeft(WheelCatcher, BaseX)
-        Canvas.SetTop(WheelCatcher, AreaTop)
+        Canvas.SetTop(WheelCatcher, Math.Min(Bottom, AreaBottom))
     End Sub
 
     Private Sub UpdateScrollBar(Entry As BubbleEntry)
@@ -879,11 +952,29 @@ Public Class AgentMascot
         Next
     End Sub
 
+    Private Sub SetBusy(Busy As Boolean)
+        Try
+            BtnSend.IsEnabled = Not Busy
+            TxtInput.IsEnabled = Not Busy
+            BtnSend.Text = If(Busy, "···", "发送")
+            If Busy Then
+                Dim Pulse As New DoubleAnimation(0.35, 1, New Duration(TimeSpan.FromMilliseconds(600))) With {
+                    .AutoReverse = True,
+                    .RepeatBehavior = RepeatBehavior.Forever}
+                BtnSend.BeginAnimation(UIElement.OpacityProperty, Pulse)
+            Else
+                BtnSend.BeginAnimation(UIElement.OpacityProperty, Nothing)
+                BtnSend.Opacity = 1
+            End If
+        Catch
+        End Try
+    End Sub
     Private Sub SendMessage()
         Dim Text As String = TxtInput.Text.Trim()
         If Text.Length = 0 Then Return
         If ModAgent.Instance.IsWaiting Then Return
         TxtInput.Text = ""
+        SetBusy(True)
         AddBubble(Text, True)
         Dim Reply As BubbleEntry = AddBubble("", False)
         HiddenNewest = 0
@@ -915,6 +1006,7 @@ Public Class AgentMascot
             End Sub,
             Sub()
                 RunInUi(Sub()
+                           SetBusy(False)
                            If Reply.Notes.Count > 0 Then
                                Reply.Notes.Clear()
                                RenderEntry(Reply)
@@ -924,6 +1016,7 @@ Public Class AgentMascot
             End Sub,
             Sub(Message)
                 RunInUi(Sub()
+                           SetBusy(False)
                            Reply.Raw.Append("出错了：" & Message)
                            RenderEntry(Reply)
                            LayoutMessages()
