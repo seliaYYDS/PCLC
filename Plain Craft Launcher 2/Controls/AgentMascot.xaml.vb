@@ -706,7 +706,7 @@ Public Class AgentMascot
             Box.Visibility = Visibility.Visible
             '内容高度与视口
             Dim ContentHeight As Double = MeasureContent(Entry)
-            Entry.NeedScroll = ContentHeight > LongMax
+            Entry.NeedScroll = ContentHeight > LongMax - 18
             If Entry.NeedScroll Then
                 Box.Height = LongMax
                 Box.ClipToBounds = True
@@ -754,7 +754,7 @@ Public Class AgentMascot
             End If
             Dim Content As Double = Entry.ContentCache
             Dim Viewport As Double = Entry.Viewer.ViewportHeight
-            If Viewport <= 0 OrElse Content <= Viewport + 0.5 Then
+            If Viewport <= 0 OrElse Content <= Viewport + 1 Then
                 Entry.Thumb.Visibility = Visibility.Collapsed
                 Return
             End If
@@ -772,7 +772,7 @@ Public Class AgentMascot
     Private Shared Function MeasureContent(Entry As BubbleEntry) As Double
         Try
             Entry.Host.Measure(New Size(300, Double.PositiveInfinity))
-            Return Entry.Host.DesiredSize.Height + 14
+            Return Entry.Host.DesiredSize.Height
         Catch
             Return 0
         End Try
