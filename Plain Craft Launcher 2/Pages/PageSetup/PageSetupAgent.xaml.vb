@@ -4,6 +4,7 @@ Public Class PageSetupAgent
 
     Private Sub PageSetupAgent_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
         PanBack.ScrollToHome()
+        SettingService.RefreshSettings(Me)
         If IsInited Then Return
         IsInited = True
         ComboAgentModel.Text = Settings.Get(Of String)("AgentModel")

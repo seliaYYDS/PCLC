@@ -5,9 +5,6 @@
         Background="{x:Null}">
     <Border x:Name="PanBubble" Width="380" MaxHeight="470" Visibility="Collapsed"
             HorizontalAlignment="Left" VerticalAlignment="Top" Background="{x:Null}" BorderThickness="0">
-        <Border.RenderTransform>
-            <TranslateTransform x:Name="SwayTransform" />
-        </Border.RenderTransform>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
@@ -23,7 +20,7 @@
             <TextBlock x:Name="LabAgentStatus" Grid.Row="1" Visibility="Collapsed" FontSize="11" Foreground="#8A90A6"
                        Margin="10,0,10,2" TextTrimming="CharacterEllipsis" />
 
-            <Border Grid.Row="2" Margin="4,0,4,4" Height="44" CornerRadius="10" Background="#FFFFFF"
+            <Border x:Name="PanInput" Grid.Row="2" Margin="4,0,4,4" Height="44" CornerRadius="10" Background="#FFFFFF"
                     BorderBrush="#D8DCE8" BorderThickness="1">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="10" ShadowDepth="1" Opacity="0.12" Direction="270"/>
@@ -36,11 +33,11 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <local:MyIconButton x:Name="BtnAgentClear" Width="26" Height="26" Margin="7,0,2,0"
-                                        VerticalAlignment="Center" LogoScale="0.55"
+                                        VerticalAlignment="Center" Theme="Black" LogoScale="0.55"
                                         Logo="F0 M4,2 h12 v2 h-12 v-2 Z M5,6 h10 v10 h-10 v-10 Z"
                                         ToolTip="清空对话"/>
                     <local:MyIconButton x:Name="BtnAgentClose" Grid.Column="1" Width="26" Height="26" Margin="2,0,6,0"
-                                        VerticalAlignment="Center" LogoScale="0.6"
+                                        VerticalAlignment="Center" Theme="Black" LogoScale="0.6"
                                         Logo="F1 M2,0 L0,2 8,10 0,18 2,20 10,12 18,20 20,18 12,10 20,2 18,0 10,8 2,0Z"
                                         ToolTip="关闭对话"/>
                     <TextBox x:Name="TxtInput" Grid.Column="2" Margin="0,6,6,6" FontSize="13" VerticalContentAlignment="Center"
@@ -52,7 +49,7 @@
         </Grid>
     </Border>
 
-    <Image x:Name="ImgMascot" Width="96" Height="96" Cursor="Hand" Stretch="Uniform"
+    <Image x:Name="ImgMascot" Width="140" Height="140" Cursor="Hand" Stretch="Uniform"
            RenderOptions.BitmapScalingMode="HighQuality">
         <Image.RenderTransform>
             <TranslateTransform x:Name="TransMascot"/>

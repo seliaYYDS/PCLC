@@ -18,11 +18,9 @@ Public Class AgentMascot
         AddHandler ImgMascot.MouseLeftButtonUp, AddressOf Mascot_MouseUp
         AddHandler SizeChanged, Sub() PositionMascot()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
-        Dim Sway As New DoubleAnimation(6, -6, New Duration(TimeSpan.FromSeconds(3.2))) With {
-            .AutoReverse = True,
-            .RepeatBehavior = RepeatBehavior.Forever,
-            .EasingFunction = New SineEase With {.EasingMode = EasingMode.EaseInOut}}
-        SwayTransform.BeginAnimation(TranslateTransform.XProperty, Sway)
+        FollowTimer.Start()
+        AddSway(PanInput, 4.0, 3.0)
+        AddHandler Me.Loaded, Sub() RefreshState()
     End Sub
 
     '工具执行前的确认（在 UI 线程弹窗，等待用户选择）
@@ -61,22 +59,26 @@ Public Class AgentMascot
         If ActualWidth <= 0 Then Return
         Dim X As Double = Settings.Get(Of Integer)("AgentPosX")
         Dim Y As Double = Settings.Get(Of Integer)("AgentPosY")
-        If X < 0 Then X = ActualWidth - 120
-        If Y < 0 Then Y = ActualHeight - 128
-        X = Math.Max(0, Math.Min(ActualWidth - 96, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 96, Y))
+        If X < 0 Then X = ActualWidth - 164
+        If Y < 0 Then Y = ActualHeight - 172
+        X = Math.Max(0, Math.Min(ActualWidth - 140, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - 140, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         PositionBubble()
     End Sub
 
-    Private BubbleInited As Boolean = False
+    '气泡跟随：定时插值，避免每帧重启动画造成卡顿
+    Private ReadOnly FollowTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
+    Private TargetLeft As Double = -1
+    Private TargetTop As Double = -1
+    Private HasPosition As Boolean = False
 
     Private Sub PositionBubble()
         If PanBubble Is Nothing Then Return
         Dim X As Double = Canvas.GetLeft(ImgMascot)
         Dim Y As Double = Canvas.GetTop(ImgMascot)
-        Dim MascotSize As Double = If(ImgMascot.ActualWidth > 0, ImgMascot.ActualWidth, 96)
+        Dim MascotSize As Double = If(ImgMascot.ActualWidth > 0, ImgMascot.ActualWidth, 140)
         Dim BubbleWidth As Double = If(PanBubble.ActualWidth > 0, PanBubble.ActualWidth, 380)
         Dim BubbleHeight As Double = If(PanBubble.ActualHeight > 0, PanBubble.ActualHeight, 470)
         Dim BubbleLeft As Double
@@ -87,24 +89,33 @@ Public Class AgentMascot
         End If
         Dim BubbleTop As Double = Y + MascotSize - BubbleHeight
         BubbleTop = Math.Max(8, Math.Min(ActualHeight - BubbleHeight - 8, BubbleTop))
-        MoveBubbleTo(Math.Max(8, Math.Min(ActualWidth - BubbleWidth - 8, BubbleLeft)), Math.Max(8, BubbleTop))
+        TargetLeft = Math.Max(8, Math.Min(ActualWidth - BubbleWidth - 8, BubbleLeft))
+        TargetTop = Math.Max(8, BubbleTop)
     End Sub
 
-    '让气泡平滑跟随，而不是瞬间钉住
-    Private Sub MoveBubbleTo(Left As Double, Top As Double)
-        If Not BubbleInited Then
-            PanBubble.BeginAnimation(Canvas.LeftProperty, Nothing)
-            PanBubble.BeginAnimation(Canvas.TopProperty, Nothing)
-            Canvas.SetLeft(PanBubble, Left)
-            Canvas.SetTop(PanBubble, Top)
-            BubbleInited = True
+    Private Sub FollowTimer_Tick(sender As Object, e As EventArgs)
+        If PanBubble Is Nothing OrElse PanBubble.Visibility <> Visibility.Visible Then Return
+        If TargetLeft < 0 Then Return
+        If Not HasPosition Then
+            Canvas.SetLeft(PanBubble, TargetLeft)
+            Canvas.SetTop(PanBubble, TargetTop)
+            HasPosition = True
             Return
         End If
-        Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseOut}
-        PanBubble.BeginAnimation(Canvas.LeftProperty, New DoubleAnimation(Left, New Duration(TimeSpan.FromMilliseconds(340))) With {.EasingFunction = Ease})
-        PanBubble.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Top, New Duration(TimeSpan.FromMilliseconds(340))) With {.EasingFunction = Ease})
+        Dim CurrentLeft As Double = Canvas.GetLeft(PanBubble)
+        Dim CurrentTop As Double = Canvas.GetTop(PanBubble)
+        If Double.IsNaN(CurrentLeft) Then CurrentLeft = TargetLeft
+        If Double.IsNaN(CurrentTop) Then CurrentTop = TargetTop
+        Dim DeltaX As Double = (TargetLeft - CurrentLeft) * 0.18
+        Dim DeltaY As Double = (TargetTop - CurrentTop) * 0.18
+        If Math.Abs(DeltaX) < 0.4 AndAlso Math.Abs(DeltaY) < 0.4 Then
+            Canvas.SetLeft(PanBubble, TargetLeft)
+            Canvas.SetTop(PanBubble, TargetTop)
+        Else
+            Canvas.SetLeft(PanBubble, CurrentLeft + DeltaX)
+            Canvas.SetTop(PanBubble, CurrentTop + DeltaY)
+        End If
     End Sub
-
     '拖拽
 
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
@@ -121,8 +132,8 @@ Public Class AgentMascot
         If Not IsDragging Then Return
         Dim X As Double = DragOffset.X + Now.X - DragStart.X
         Dim Y As Double = DragOffset.Y + Now.Y - DragStart.Y
-        X = Math.Max(0, Math.Min(ActualWidth - 96, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 96, Y))
+        X = Math.Max(0, Math.Min(ActualWidth - 140, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - 140, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         PositionBubble()
@@ -146,7 +157,7 @@ Public Class AgentMascot
             PanBubble.Visibility = Visibility.Collapsed
             Return
         End If
-        BubbleInited = False
+        HasPosition = False
         PanBubble.Visibility = Visibility.Visible
         PositionBubble()
         If PanMessages.Children.Count = 0 Then
@@ -177,6 +188,7 @@ Public Class AgentMascot
             .VerticalAlignment = VerticalAlignment.Top
         }
         PanMessages.Children.Add(Box)
+        AddSway(Box, 3.0 + (PanMessages.Children.Count Mod 3) * 0.6, 2.4 + (PanMessages.Children.Count Mod 4) * 0.3)
         PanScroll.ScrollToEnd()
         Return Content
     End Function
@@ -219,6 +231,20 @@ Public Class AgentMascot
             End Sub)
     End Sub
 
+    Private Shared Sub AddSway(Target As FrameworkElement, Amplitude As Double, Seconds As Double)
+        Try
+            If Target Is Nothing Then Return
+            Dim Transform As New TranslateTransform()
+            Target.RenderTransform = Transform
+            Dim Sway As New DoubleAnimation(Amplitude, -Amplitude, New Duration(TimeSpan.FromSeconds(Seconds))) With {
+                .AutoReverse = True,
+                .RepeatBehavior = RepeatBehavior.Forever,
+                .EasingFunction = New SineEase With {.EasingMode = EasingMode.EaseInOut},
+                .BeginTime = TimeSpan.FromMilliseconds(New Random().Next(0, 1500))}
+            Transform.BeginAnimation(TranslateTransform.XProperty, Sway)
+        Catch
+        End Try
+    End Sub
     Private Sub SetStatus(Text As String)
         If LabAgentStatus Is Nothing Then Return
         LabAgentStatus.Text = Text
