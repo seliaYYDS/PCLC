@@ -13,19 +13,19 @@ Public Module ModAgentContent
         Dim SearchSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"query", New JObject From {{"type", "string"}, {"description", "搜索关键词，可为空"}}},
-                {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack/modpack，默认 mod"}}},
-                {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本，如 1.20.1"}}},
-                {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器：fabric/forge/neoforge/quilt，仅对 mod 有效"}}},
-                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10，最多 30"}}},
-                {"offset", New JObject From {{"type", "integer"}, {"description", "跳过前多少条，用于翻页"}}},
-                {"sort", New JObject From {{"type", "string"}, {"description", "排序：relevance/downloads/newest/updated，默认 relevance"}}},
-                {"source", New JObject From {{"type", "string"}, {"description", "来源：modrinth/curseforge/both，默认 modrinth"}}}
+                {"query", New JObject From {{"type", "string"}, {"description", "Search query (optional)."}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "Resource type: mod/resourcepack/shader/datapack/modpack (default mod)."}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Filter by Minecraft version, e.g. 1.20.1."}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "Filter by loader: fabric/forge/neoforge/quilt (mods only)."}}},
+                {"limit", New JObject From {{"type", "integer"}, {"description", "Result count (default 10, max 30)."}}},
+                {"offset", New JObject From {{"type", "integer"}, {"description", "Offset for pagination."}}},
+                {"sort", New JObject From {{"type", "string"}, {"description", "Sort: relevance/downloads/newest/updated (default relevance)."}}},
+                {"source", New JObject From {{"type", "string"}, {"description", "Source: modrinth/curseforge/both (default modrinth)."}}}
             }}
         }
         List.Add(New AgentTool With {
             .Name = "search_content",
-            .Description = "搜索 Mod、资源包、光影包、数据包、整合包（来源：Modrinth）",
+            .Description = "Search mods, resource packs, shaders, datapacks and modpacks.",
             .Risk = 0,
             .Schema = SearchSchema,
             .Run = Function(Args) SearchContent(Args)})
@@ -33,17 +33,17 @@ Public Module ModAgentContent
         Dim VersionsSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"project", New JObject From {{"type", "string"}, {"description", "项目 slug 或 ID"}}},
-                {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本"}}},
-                {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器"}}},
-                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10"}}},
-                {"source", New JObject From {{"type", "string"}, {"description", "来源：modrinth/curseforge，默认按 project 形式：数字为 CurseForge"}}}
+                {"project", New JObject From {{"type", "string"}, {"description", "Project slug or ID list (Modrinth)."}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Filter by Minecraft version."}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "Filter by loader."}}},
+                {"limit", New JObject From {{"type", "integer"}, {"description", "Result count (default 10)."}}},
+                {"source", New JObject From {{"type", "string"}, {"description", "Source: modrinth/curseforge; numeric project means CurseForge."}}}
             }},
             {"required", New JArray From {"project"}}
         }
         List.Add(New AgentTool With {
             .Name = "list_content_versions",
-            .Description = "列出某个项目可下载的版本，用于挑选后再安装",
+            .Description = "List downloadable versions of a project.",
             .Risk = 0,
             .Schema = VersionsSchema,
             .Run = Function(Args) ListVersions(Args)})
@@ -51,17 +51,17 @@ Public Module ModAgentContent
         Dim InstallSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"url", New JObject From {{"type", "string"}, {"description", "文件下载地址（来自 list_content_versions）"}}},
-                {"fileName", New JObject From {{"type", "string"}, {"description", "保存的文件名，需带扩展名"}}},
-                {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack，默认 mod"}}},
-                {"world", New JObject From {{"type", "string"}, {"description", "数据包安装到的存档名，仅 datapack 需要"}}},
-                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}
+                {"url", New JObject From {{"type", "string"}, {"description", "File URL from list_content_versions."}}},
+                {"fileName", New JObject From {{"type", "string"}, {"description", "File name including extension."}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "Resource type: mod/resourcepack/shader/datapack (default mod)."}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "Target world for datapacks."}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "Target instance (default: selected instance)."}}}
             }},
             {"required", New JArray From {"url", "fileName"}}
         }
         List.Add(New AgentTool With {
             .Name = "install_content",
-            .Description = "把资源文件下载并安装到当前版本的对应目录（自动考虑版本隔离）",
+            .Description = "Download and install a resource file into the target instance.",
             .Risk = 2,
             .Schema = InstallSchema,
             .Run = Function(Args) InstallContent(Args)})
@@ -69,18 +69,18 @@ Public Module ModAgentContent
         Dim BatchSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"items", New JObject From {{"type", "array"}, {"items", New JObject From {{"type", "string"}}}, {"description", "项目 slug 或 ID 列表（Modrinth）"}}},
-                {"gameVersion", New JObject From {{"type", "string"}, {"description", "目标 Minecraft 版本，默认取当前实例的版本"}}},
-                {"loader", New JObject From {{"type", "string"}, {"description", "加载器：fabric/forge/neoforge/quilt，默认取当前实例"}}},
-                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
-                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}},
-                {"withDependencies", New JObject From {{"type", "boolean"}, {"description", "是否自动安装必需前置，默认 true"}}}
+                {"items", New JObject From {{"type", "array"}, {"items", New JObject From {{"type", "string"}}}, {"description", "Project slug or ID list (Modrinth)."}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Target Minecraft version (default: instance version)."}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "Loader: fabric/forge/neoforge/quilt (default: instance loader)."}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "Resource type (default mod)."}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "Target instance (default: selected instance)."}}},
+                {"withDependencies", New JObject From {{"type", "boolean"}, {"description", "Install required dependencies (default true)."}}}
             }},
             {"required", New JArray From {"items"}}
         }
         List.Add(New AgentTool With {
             .Name = "install_projects",
-            .Description = "按项目批量安装资源并自动补全必需前置，一次可装多个；自动挑选匹配目标版本与加载器的文件",
+            .Description = "Install multiple projects in one call and resolve required dependencies automatically.",
             .Risk = 2,
             .Schema = BatchSchema,
             .Run = Function(Args) InstallProjects(Args)})
@@ -88,15 +88,15 @@ Public Module ModAgentContent
         Dim DeleteSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"fileName", New JObject From {{"type", "string"}, {"description", "要删除的文件名"}}},
-                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
-                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}}
+                {"fileName", New JObject From {{"type", "string"}, {"description", "File name to delete."}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "Resource type (default mod)."}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "World name (datapacks only)."}}}
             }},
             {"required", New JArray From {"fileName"}}
         }
         List.Add(New AgentTool With {
             .Name = "delete_content",
-            .Description = "删除当前版本目录下的资源文件",
+            .Description = "Delete a resource file from the instance.",
             .Risk = 2,
             .Schema = DeleteSchema,
             .Run = Function(Args) DeleteContent(Args)})
@@ -104,35 +104,35 @@ Public Module ModAgentContent
         Dim PackSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"url", New JObject From {{"type", "string"}, {"description", "整合包文件下载地址（.mrpack/.zip）"}}},
-                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称"}}}
+                {"url", New JObject From {{"type", "string"}, {"description", "Modpack file URL (.mrpack/.zip)."}}},
+                {"name", New JObject From {{"type", "string"}, {"description", "Instance name."}}}
             }},
             {"required", New JArray From {"url", "name"}}
         }
         List.Add(New AgentTool With {
             .Name = "install_modpack",
-            .Description = "下载整合包并安装为一个新版本（自动处理加载器、模组与配置）",
+            .Description = "Download a modpack and install it as a new instance.",
             .Risk = 2,
             .Schema = PackSchema,
             .Run = Function(Args) InstallModpack(Args)})
 
         List.Add(New AgentTool With {
             .Name = "list_worlds",
-            .Description = "列出当前版本目录下的存档，用于数据包安装",
+            .Description = "List worlds of the instance for datapack installation.",
             .Risk = 0,
-            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject From {{"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}}}},
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject From {{"instance", New JObject From {{"type", "string"}, {"description", "Target instance (default: selected instance)."}}}}}},
             .Run = Function(Args) ListWorlds(Args)})
         Dim ListInstalledSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
-                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}},
-                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}
+                {"type", New JObject From {{"type", "string"}, {"description", "Resource type (default mod)."}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "World name (datapacks only)."}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "Target instance (default: selected instance)."}}}
             }}
         }
         List.Add(New AgentTool With {
             .Name = "list_installed_content",
-            .Description = "列出当前版本目录下已安装的资源文件",
+            .Description = "List installed resource files of the instance.",
             .Risk = 0,
             .Schema = ListInstalledSchema,
             .Run = Function(Args) ListInstalled(Args)})

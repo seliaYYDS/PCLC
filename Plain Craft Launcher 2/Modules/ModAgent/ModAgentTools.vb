@@ -17,7 +17,7 @@ Public Module ModAgentTools
         '启动器状态
         ToolList.Add(New AgentTool With {
             .Name = "get_launcher_state",
-            .Description = "获取启动器当前状态：主题、选中的版本、内存设置等",
+            .Description = "Get launcher state: theme, selected instance and memory settings.",
             .Risk = 0,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) GetLauncherState()})
@@ -25,7 +25,7 @@ Public Module ModAgentTools
         '实例列表
         ToolList.Add(New AgentTool With {
             .Name = "list_instances",
-            .Description = "列出所有已安装的 Minecraft 版本",
+            .Description = "List installed Minecraft instances.",
             .Risk = 0,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) ListInstances()})
@@ -34,12 +34,12 @@ Public Module ModAgentTools
         Dim LogSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"lines", New JObject From {{"type", "integer"}, {"description", "读取最后多少行，默认 120"}}}
+                {"lines", New JObject From {{"type", "integer"}, {"description", "Number of trailing lines to read (default 120)."}}}
             }}
         }
         ToolList.Add(New AgentTool With {
             .Name = "read_log",
-            .Description = "读取启动器与游戏日志的末尾内容，用于排查启动失败等问题",
+            .Description = "Read the tail of launcher and game logs for troubleshooting.",
             .Risk = 0,
             .Schema = LogSchema,
             .Run = Function(Args)
@@ -51,15 +51,15 @@ Public Module ModAgentTools
         Dim WebSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"url", New JObject From {{"type", "string"}, {"description", "要抓取的完整 URL"}}},
+                {"url", New JObject From {{"type", "string"}, {"description", "Full URL to fetch."}}},
                 {"method", New JObject From {{"type", "string"}, {"enum", New JArray From {"GET", "POST"}}}},
-                {"body", New JObject From {{"type", "string"}, {"description", "POST 请求体"}}}
+                {"body", New JObject From {{"type", "string"}, {"description", "POST body."}}}
             }},
             {"required", New JArray From {"url"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "web_fetch",
-            .Description = "抓取指定网页或接口内容（HTML 会转成纯文本），用于查询资料",
+            .Description = "Fetch a URL and convert HTML to plain text.",
             .Risk = 1,
             .Schema = WebSchema,
             .Run = Function(Args) ModAgentWeb.Fetch(Args)})
@@ -67,12 +67,12 @@ Public Module ModAgentTools
         '修改内存
         Dim MemSchema As New JObject From {
             {"type", "object"},
-            {"properties", New JObject From {{"mb", New JObject From {{"type", "integer"}, {"description", "分配给游戏的 MB 数，例如 4096"}}}}},
+            {"properties", New JObject From {{"mb", New JObject From {{"type", "integer"}, {"description", "Memory in MB, e.g. 4096."}}}}},
             {"required", New JArray From {"mb"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "set_memory",
-            .Description = "设置当前选中版本的内存分配（MB）",
+            .Description = "Set memory allocation (MB) for the selected instance.",
             .Risk = 1,
             .Schema = MemSchema,
             .Run = Function(Args) SetMemory(Args)})
@@ -85,7 +85,7 @@ Public Module ModAgentTools
         }
         ToolList.Add(New AgentTool With {
             .Name = "open_page",
-            .Description = "切换启动器到指定页面",
+            .Description = "Switch the launcher to a page.",
             .Risk = 1,
             .Schema = PageSchema,
             .Run = Function(Args) OpenPage(Args)})
@@ -93,7 +93,7 @@ Public Module ModAgentTools
         '启动游戏
         ToolList.Add(New AgentTool With {
             .Name = "launch_game",
-            .Description = "启动当前选中的 Minecraft 版本",
+            .Description = "Launch the selected Minecraft instance.",
             .Risk = 2,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) LaunchGame()})
@@ -102,17 +102,17 @@ Public Module ModAgentTools
         Dim InstallSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"version", New JObject From {{"type", "string"}, {"description", "原版版本号，例如 1.20.1"}}},
-                {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称，留空则与版本号相同"}}},
-                {"loader", New JObject From {{"type", "string"}, {"enum", New JArray From {"vanilla", "fabric", "forge", "neoforge"}}, {"description", "加载器类型，默认 vanilla"}}},
-                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "加载器版本，留空时 Fabric 选稳定版、Forge 选推荐版、NeoForge 选最新非 Beta"}}},
-                {"fabricApi", New JObject From {{"type", "boolean"}, {"description", "Fabric 是否同时安装 Fabric API，默认 true"}}}
+                {"version", New JObject From {{"type", "string"}, {"description", "Vanilla version, e.g. 1.20.1."}}},
+                {"name", New JObject From {{"type", "string"}, {"description", "Instance name; defaults to the version."}}},
+                {"loader", New JObject From {{"type", "string"}, {"enum", New JArray From {"vanilla", "fabric", "forge", "neoforge"}}, {"description", "Loader type (default vanilla)."}}},
+                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "Loader version; defaults: Fabric stable, Forge recommended, NeoForge latest non-beta."}}},
+                {"fabricApi", New JObject From {{"type", "boolean"}, {"description", "Also install Fabric API (default true)."}}}
             }},
             {"required", New JArray From {"version"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "install_instance",
-            .Description = "安装 Minecraft 版本，支持原版、Fabric（自动附带 Fabric API）、Forge、NeoForge",
+            .Description = "Install an instance: vanilla, Fabric (with Fabric API), Forge or NeoForge.",
             .Risk = 2,
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
@@ -121,27 +121,27 @@ Public Module ModAgentTools
         Dim ModifySchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"name", New JObject From {{"type", "string"}, {"description", "版本名称，默认当前选中版本"}}},
+                {"name", New JObject From {{"type", "string"}, {"description", "Instance name (default: selected instance)."}}},
                 {"loader", New JObject From {{"type", "string"}, {"description", "forge/fabric/neoforge"}}},
-                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "加载器版本，默认推荐版/稳定版"}}}
+                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "Loader version (default recommended/stable)."}}}
             }},
             {"required", New JArray From {"loader"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "modify_instance_loader",
-            .Description = "为已安装的版本添加或更换 Forge/Fabric/NeoForge 加载器（保留 Mod 与配置）",
+            .Description = "Add or change the Forge/Fabric/NeoForge loader of an existing instance, keeping mods and configs.",
             .Risk = 2,
             .Schema = ModifySchema,
             .Run = Function(Args) ModifyInstanceLoader(Args)})
         '删除实例
         Dim DelSchema As New JObject From {
             {"type", "object"},
-            {"properties", New JObject From {{"name", New JObject From {{"type", "string"}, {"description", "要删除的版本名称"}}}}},
+            {"properties", New JObject From {{"name", New JObject From {{"type", "string"}, {"description", "Instance name to delete."}}}}},
             {"required", New JArray From {"name"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "delete_instance",
-            .Description = "删除指定的 Minecraft 版本（移动文件夹到回收站）",
+            .Description = "Delete an instance; its folder is moved to the recycle bin.",
             .Risk = 2,
             .Schema = DelSchema,
             .Run = Function(Args) DeleteInstance(Args)})
@@ -153,7 +153,7 @@ Public Module ModAgentTools
         }
         ToolList.Add(New AgentTool With {
             .Name = "set_mascot_mood",
-            .Description = "设置小瑟的表情来表达情绪：normal 平静、happy 开心、confused 疑惑、angry 生气、shy 害羞",
+            .Description = "Set Xiaose's expression: normal, happy, confused, angry or shy.",
             .Risk = 0,
             .Schema = MoodSchema,
             .Run = Function(Args) SetMascotMood(Args)})
@@ -213,7 +213,7 @@ Public Module ModAgentTools
                 Case "delete_instance"
                     Return "删除版本「" & Args("name")?.ToString() & "」，文件夹会被移入回收站"
                 Case "launch_game"
-                    Return "启动当前选中的 Minecraft 版本"
+                    Return "Launch the selected Minecraft instance."
                 Case "set_memory"
                     Return "把内存分配设置为 " & Args("mb")?.ToString() & " MB"
                 Case "open_page"
@@ -751,15 +751,15 @@ Public Module ModAgentTools
         Dim ReadFileSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的路径"}}},
-                {"offset", New JObject From {{"type", "integer"}, {"description", "起始字节/字符偏移，默认 0"}}},
-                {"length", New JObject From {{"type", "integer"}, {"description", "读取字符数，默认 65536"}}}
+                {"path", New JObject From {{"type", "string"}, {"description", "Path relative to .minecraft."}}},
+                {"offset", New JObject From {{"type", "integer"}, {"description", "Start offset in characters (default 0)."}}},
+                {"length", New JObject From {{"type", "integer"}, {"description", "Characters to read (default 65536)."}}}
             }},
             {"required", New JArray From {"path"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "read_file",
-            .Description = "读取 .minecraft 目录内的文本文件，可指定偏移与长度",
+            .Description = "Read a text file under .minecraft, optionally with offset and length.",
             .Risk = 0,
             .Schema = ReadFileSchema,
             .Run = Function(Args) ReadTextFile(Args)})
@@ -767,15 +767,15 @@ Public Module ModAgentTools
         Dim WriteFileSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的路径"}}},
-                {"content", New JObject From {{"type", "string"}, {"description", "写入内容"}}},
-                {"append", New JObject From {{"type", "boolean"}, {"description", "是否追加，默认覆盖"}}}
+                {"path", New JObject From {{"type", "string"}, {"description", "Path relative to .minecraft."}}},
+                {"content", New JObject From {{"type", "string"}, {"description", "Content to write."}}},
+                {"append", New JObject From {{"type", "boolean"}, {"description", "Append instead of overwrite (default false)."}}}
             }},
             {"required", New JArray From {"path", "content"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "write_file",
-            .Description = "写入 .minecraft 目录内的文本文件（覆盖或追加）",
+            .Description = "Write a text file under .minecraft (overwrite or append).",
             .Risk = 2,
             .Schema = WriteFileSchema,
             .Run = Function(Args) WriteTextFile(Args)})
@@ -783,12 +783,12 @@ Public Module ModAgentTools
         Dim ListDirSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的目录，默认根目录"}}}
+                {"path", New JObject From {{"type", "string"}, {"description", "Directory relative to .minecraft (default root)."}}}
             }}
         }
         ToolList.Add(New AgentTool With {
             .Name = "list_dir",
-            .Description = "列出 .minecraft 目录内某个文件夹的文件与子目录",
+            .Description = "List files and subfolders of a directory under .minecraft.",
             .Risk = 0,
             .Schema = ListDirSchema,
             .Run = Function(Args) ListDirectory(Args)})
@@ -796,21 +796,21 @@ Public Module ModAgentTools
         Dim PwshSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"command", New JObject From {{"type", "string"}, {"description", "要执行的 PowerShell 命令"}}},
-                {"workdir", New JObject From {{"type", "string"}, {"description", "工作目录，相对于 .minecraft"}}}
+                {"command", New JObject From {{"type", "string"}, {"description", "PowerShell command to run."}}},
+                {"workdir", New JObject From {{"type", "string"}, {"description", "Working directory relative to .minecraft."}}}
             }},
             {"required", New JArray From {"command"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "run_pwsh",
-            .Description = "在 .minecraft 目录内执行 PowerShell 命令（高风险，可读写文件）",
+            .Description = "Run a PowerShell command inside .minecraft (high risk).",
             .Risk = 2,
             .Schema = PwshSchema,
             .Run = Function(Args) RunPwsh(Args)})
 
         ToolList.Add(New AgentTool With {
             .Name = "list_accounts",
-            .Description = "列出已保存的 Minecraft 账号与当前登录方式",
+            .Description = "List saved Minecraft accounts and the current login type.",
             .Risk = 0,
             .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
             .Run = Function(Args) ListAccounts()})
@@ -818,13 +818,13 @@ Public Module ModAgentTools
         Dim SelectAccountSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"name", New JObject From {{"type", "string"}, {"description", "账号名（微软账号为游戏名，离线账号为用户名）"}}}
+                {"name", New JObject From {{"type", "string"}, {"description", "Account name (game name for Microsoft, username for offline)."}}}
             }},
             {"required", New JArray From {"name"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "select_account",
-            .Description = "切换当前使用的账号",
+            .Description = "Switch the active account.",
             .Risk = 2,
             .Schema = SelectAccountSchema,
             .Run = Function(Args) SelectAccount(Args)})
@@ -832,13 +832,13 @@ Public Module ModAgentTools
         Dim AddLegacySchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"name", New JObject From {{"type", "string"}, {"description", "离线用户名"}}}
+                {"name", New JObject From {{"type", "string"}, {"description", "Offline username."}}}
             }},
             {"required", New JArray From {"name"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "add_offline_account",
-            .Description = "添加一个离线账号并切换过去",
+            .Description = "Add an offline account and switch to it.",
             .Risk = 2,
             .Schema = AddLegacySchema,
             .Run = Function(Args) AddLegacyAccount(Args)})
@@ -846,13 +846,13 @@ Public Module ModAgentTools
         Dim DeleteAccountSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
-                {"name", New JObject From {{"type", "string"}, {"description", "要移除的账号名"}}}
+                {"name", New JObject From {{"type", "string"}, {"description", "Account name to remove."}}}
             }},
             {"required", New JArray From {"name"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "delete_account",
-            .Description = "移除已保存的账号",
+            .Description = "Remove a saved account.",
             .Risk = 2,
             .Schema = DeleteAccountSchema,
             .Run = Function(Args) DeleteAccount(Args)})
