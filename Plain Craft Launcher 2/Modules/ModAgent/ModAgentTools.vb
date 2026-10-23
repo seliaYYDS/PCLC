@@ -105,13 +105,14 @@ Public Module ModAgentTools
                 {"version", New JObject From {{"type", "string"}, {"description", "原版版本号，例如 1.20.1"}}},
                 {"name", New JObject From {{"type", "string"}, {"description", "安装后的版本名称，留空则与版本号相同"}}},
                 {"loader", New JObject From {{"type", "string"}, {"enum", New JArray From {"vanilla", "fabric", "forge", "neoforge"}}, {"description", "加载器类型，默认 vanilla"}}},
-                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "Fabric 加载器版本，留空自动选择稳定版"}}}
+                {"loaderVersion", New JObject From {{"type", "string"}, {"description", "加载器版本，留空时 Fabric 选稳定版、Forge 选推荐版、NeoForge 选最新非 Beta"}}},
+                {"fabricApi", New JObject From {{"type", "boolean"}, {"description", "Fabric 是否同时安装 Fabric API，默认 true"}}}
             }},
             {"required", New JArray From {"version"}}
         }
         ToolList.Add(New AgentTool With {
             .Name = "install_instance",
-            .Description = "安装 Minecraft 版本，支持原版与 Fabric（Forge/NeoForge 请让用户去下载页手动选择）",
+            .Description = "安装 Minecraft 版本，支持原版、Fabric（自动附带 Fabric API）、Forge、NeoForge",
             .Risk = 2,
             .Schema = InstallSchema,
             .Run = Function(Args) InstallInstance(Args)})
@@ -320,7 +321,7 @@ Public Module ModAgentTools
     Private Function ReadLog(Count As Integer) As String
         Try
             If Count <= 0 Then Count = 120
-            Dim Path As String = Paths.Base & "PCLLog1.txt"
+            Dim Path As String = Paths.Base & "PCL\Log1.txt"
             If Not IO.File.Exists(Path) Then Return "找不到日志文件：" & Path
             Dim All As String() = IO.File.ReadAllLines(Path)
             Dim Start As Integer = Math.Max(0, All.Length - Count)
@@ -380,11 +381,11 @@ Public Module ModAgentTools
         Dim FabricApiEntry As ResourceVersion = Nothing
         If Loader = "forge" Then
             ForgeEntry = PickForgeVersion(Version, LoaderVersion)
-            If ForgeEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 Forge 版本"
+            If ForgeEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 Forge 版本" & If(String.IsNullOrWhiteSpace(LastInstallError), "", "：" & LastInstallError)
             Components = New McComponents(Version, Nothing, ForgeEntry.VersionName, Nothing, Nothing, Nothing, Nothing, Nothing)
         ElseIf Loader = "neoforge" Then
             NeoEntry = PickNeoForgeVersion(Version, LoaderVersion)
-            If NeoEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 NeoForge 版本"
+            If NeoEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 NeoForge 版本" & If(String.IsNullOrWhiteSpace(LastInstallError), "", "：" & LastInstallError)
             Components = New McComponents(Version, Nothing, Nothing, NeoEntry.VersionName, Nothing, Nothing, Nothing, Nothing)
         End If
         If Loader = "fabric" Then
@@ -553,14 +554,27 @@ Public Module ModAgentTools
         If Success Then Return "已开始为 " & Target.Name & " 安装 " & Loader & "，可在任务管理器查看进度"
         Return "启动修改失败，请查看日志或在下载页手动修改"
     End Function
+    Private LastInstallError As String = ""
+
     Private Function PickForgeVersion(McVersion As String, Want As String) As DlForgeVersionEntry
         Try
             Dim Task As New LoaderTask(Of String, List(Of DlForgeVersionEntry))("AgentForgeList", AddressOf DlForgeVersionMain)
             Task.Start(McVersion)
-            Task.WaitForExit(60000)
-            If Task.State <> LoadState.Finished OrElse Task.Output Is Nothing Then Return Nothing
+            Task.WaitForExit(180000)
+            If Task.State = LoadState.Failed Then
+                LastInstallError = "获取 Forge 版本列表失败：" & If(Task.Error Is Nothing, "未知错误", Task.Error.Message)
+                Logger.Warn(Task.Error, "Agent 获取 Forge 版本列表失败")
+                Return Nothing
+            End If
+            If Task.State <> LoadState.Finished OrElse Task.Output Is Nothing Then
+                LastInstallError = "获取 Forge 版本列表超时或未完成（状态：" & Task.State.ToString() & "）"
+                Return Nothing
+            End If
             Dim List As List(Of DlForgeVersionEntry) = Task.Output
-            If List.Count = 0 Then Return Nothing
+            If List.Count = 0 Then
+                LastInstallError = "Forge 版本列表为空（" & McVersion & " 可能没有 Forge 版本）"
+                Return Nothing
+            End If
             If Not String.IsNullOrWhiteSpace(Want) Then
                 For Each Item In List
                     If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
@@ -580,16 +594,26 @@ Public Module ModAgentTools
         Try
             If DlNeoForgeListLoader.State <> LoadState.Finished Then
                 DlNeoForgeListLoader.Start(0)
-                DlNeoForgeListLoader.WaitForExit(60000)
+                DlNeoForgeListLoader.WaitForExit(180000)
             End If
-            If DlNeoForgeListLoader.State <> LoadState.Finished Then Return Nothing
+            If DlNeoForgeListLoader.State = LoadState.Failed Then
+                LastInstallError = "获取 NeoForge 版本列表失败：" & If(DlNeoForgeListLoader.Error Is Nothing, "未知错误", DlNeoForgeListLoader.Error.Message)
+                Return Nothing
+            End If
+            If DlNeoForgeListLoader.State <> LoadState.Finished Then
+                LastInstallError = "获取 NeoForge 版本列表超时或未完成（状态：" & DlNeoForgeListLoader.State.ToString() & "）"
+                Return Nothing
+            End If
             Dim All As List(Of DlNeoForgeListEntry) = DlNeoForgeListLoader.Output.Value
             If All Is Nothing Then Return Nothing
             Dim Matched As New List(Of DlNeoForgeListEntry)
             For Each Item In All
                 If Item.Inherit = McVersion Then Matched.Add(Item)
             Next
-            If Matched.Count = 0 Then Return Nothing
+            If Matched.Count = 0 Then
+                LastInstallError = "NeoForge 版本列表中没有 " & McVersion & " 对应项"
+                Return Nothing
+            End If
             If Not String.IsNullOrWhiteSpace(Want) Then
                 For Each Item In Matched
                     If String.Equals(Item.VersionName, Want, StringComparison.OrdinalIgnoreCase) Then Return Item
