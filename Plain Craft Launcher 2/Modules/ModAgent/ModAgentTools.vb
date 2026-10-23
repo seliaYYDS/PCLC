@@ -234,6 +234,23 @@ Public Module ModAgentTools
                     Return "列出已安装版本"
                 Case "list_accounts"
                     Return "列出已保存账号"
+                Case "rename_instance"
+                    Return "重命名版本：" & Args("name")?.ToString() & " → " & Args("newName")?.ToString()
+                Case "set_instance_settings"
+                    Return "修改版本设置：" & If(Args("instance") Is Nothing, "当前选中版本", Args("instance").ToString())
+                Case "toggle_mod"
+                    Dim Enable As Boolean = Args("enable") Is Nothing OrElse Args("enable").ToObject(Of Boolean)()
+                    Return If(Enable, "启用 Mod：", "禁用 Mod：") & Args("fileName")?.ToString()
+                Case "list_java"
+                    Return "列出本机 Java"
+                Case "open_folder"
+                    Return "打开文件夹：" & If(Args("path") Is Nothing, ".minecraft", Args("path").ToString())
+                Case "open_url"
+                    Return "打开链接：" & Args("url")?.ToString()
+                Case "game_status"
+                    Return "查询游戏进程状态"
+                Case "kill_game"
+                    Return "结束正在运行的游戏进程"
                 Case "modify_instance_loader"
                     Return "为版本添加加载器：" & Args("loader")?.ToString() & If(Args("name") Is Nothing, "", "（" & Args("name").ToString() & "）")
                 Case "install_modpack"
@@ -750,6 +767,159 @@ Public Module ModAgentTools
         ModAgentChanges.Removed("版本", Name)
         Return "已删除版本 " & Name & "（已放入回收站）"
     End Function
+    ' ---- P0 工具 ----
+
+    Private Function RenameInstance(Args As JObject) As String
+        Dim Name As String = Args("name")?.ToString()
+        Dim NewName As String = Args("newName")?.ToString()
+        If String.IsNullOrWhiteSpace(Name) OrElse String.IsNullOrWhiteSpace(NewName) Then Return "缺少 name 或 newName 参数"
+        If NewName.IndexOfAny(IO.Path.GetInvalidFileNameChars()) >= 0 Then Return "新名称包含非法字符"
+        Dim Target As McInstance = FindInstanceByName(Name)
+        If Target Is Nothing Then Return "没有找到版本：" & Name
+        If McInstanceLock.IsLocked(Target) Then Return "该版本正在被修改，请稍后再试"
+        Try
+            Target.Rename(NewName.Trim())
+        Catch ex As Exception
+            Return "重命名失败：" & ex.Message
+        End Try
+        RunInUi(Sub() LoaderFolderRun(McInstanceListLoader, McFolderSelected, LoaderFolderRunType.ForceRun, MaxDepth:=1, ExtraPath:="versions\"))
+        Return "已将 " & Name & " 重命名为 " & NewName
+    End Function
+
+    Private Function SetInstanceSettings(Args As JObject) As String
+        Dim Name As String = Args("instance")?.ToString()
+        Dim Target As McInstance = If(String.IsNullOrWhiteSpace(Name), McInstanceSelected, FindInstanceByName(Name))
+        If Target Is Nothing Then Return "没有找到版本：" & Name
+        Dim Changed As New List(Of String)
+        If Args("indie") IsNot Nothing Then
+            Settings.Set("VersionArgumentIndieV2", Args("indie").ToObject(Of Boolean)(), Instance:=Target)
+            Changed.Add("版本隔离")
+        End If
+        If Args("ramMb") IsNot Nothing Then
+            Dim Mb As Integer = Args("ramMb").ToObject(Of Integer)()
+            If Mb < 512 Then Mb = 512
+            If Mb > 65536 Then Mb = 65536
+            Settings.Set("VersionRamType", 2, Instance:=Target)
+            Settings.Set("VersionRamCustom", Mb, Instance:=Target)
+            Changed.Add("内存 " & Mb & " MB")
+        End If
+        If Args("javaPath") IsNot Nothing Then
+            Dim Path As String = Args("javaPath").ToString().Trim()
+            If Path = "" OrElse Path.Equals("auto", StringComparison.OrdinalIgnoreCase) Then
+                Settings.Set("VersionArgumentJavaV2", 0, Instance:=Target)
+                Changed.Add("Java 自动选择")
+            Else
+                If Not IO.File.Exists(Path) Then Return "Java 路径不存在：" & Path
+                Settings.Set("VersionArgumentJavaV2", 3, Instance:=Target)
+                Settings.Set("VersionArgumentJavaSelect", Path, Instance:=Target)
+                Changed.Add("Java：" & Path)
+            End If
+        End If
+        If Args("jvmArgs") IsNot Nothing Then
+            Settings.Set("VersionArgumentInfo", Args("jvmArgs").ToString(), Instance:=Target)
+            Changed.Add("高级参数")
+        End If
+        If Changed.Count = 0 Then Return "没有需要修改的设置"
+        Return "已更新 " & Target.Name & "：" & String.Join("、", Changed)
+    End Function
+
+    Private Function ToggleMod(Args As JObject) As String
+        Dim FileName As String = Args("fileName")?.ToString()
+        If String.IsNullOrWhiteSpace(FileName) Then Return "缺少 fileName 参数"
+        Dim Name As String = Args("instance")?.ToString()
+        Dim Target As McInstance = If(String.IsNullOrWhiteSpace(Name), McInstanceSelected, FindInstanceByName(Name))
+        If Target Is Nothing Then Return "没有找到版本：" & Name
+        Dim Base As String = If(String.IsNullOrWhiteSpace(Target.PathIndie), McFolderSelected, Target.PathIndie)
+        Dim Folder As String = IO.Path.Combine(Base, "mods")
+        Dim Enable As Boolean = Args("enable") Is Nothing OrElse Args("enable").ToObject(Of Boolean)()
+        Dim Plain As String = FileName
+        If Plain.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) Then Plain = Plain.Substring(0, Plain.Length - 9)
+        Dim EnabledPath As String = IO.Path.Combine(Folder, Plain)
+        Dim DisabledPath As String = EnabledPath & ".disabled"
+        Try
+            If Enable Then
+                If IO.File.Exists(DisabledPath) Then
+                    IO.File.Move(DisabledPath, EnabledPath)
+                    Return "已启用 " & Plain
+                End If
+                If IO.File.Exists(EnabledPath) Then Return "该 Mod 已启用：" & Plain
+                Return "没有找到文件：" & Plain
+            Else
+                If IO.File.Exists(EnabledPath) Then
+                    IO.File.Move(EnabledPath, DisabledPath)
+                    Return "已禁用 " & Plain
+                End If
+                If IO.File.Exists(DisabledPath) Then Return "该 Mod 已禁用：" & Plain
+                Return "没有找到文件：" & Plain
+            End If
+        Catch ex As Exception
+            Return "操作失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ListJava() As String
+        Try
+            Dim List As IEnumerable = Configs.JavaList.Get()
+            Dim Items As New JArray()
+            For Each Item In List
+                Items.Add(New JObject From {
+                    {"path", Item.Folder?.ToString()},
+                    {"exe", Item.JavaExePath?.ToString()},
+                    {"version", If(Item.Version Is Nothing, "", Item.Version.ToString())}
+                })
+            Next
+            Return Items.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "读取 Java 列表失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function OpenFolder(Args As JObject) As String
+        Dim Relative As String = If(Args("path") Is Nothing, "", Args("path").ToString())
+        Dim Target As String = ResolvePath(Relative)
+        If Target Is Nothing Then Return "路径超出 .minecraft 目录"
+        If Not IO.Directory.Exists(Target) Then Return "目录不存在：" & Relative
+        Try
+            Process.Start("explorer.exe", """" & Target & """")
+            Return "已打开文件夹：" & Target
+        Catch ex As Exception
+            Return "打开失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function OpenUrl(Args As JObject) As String
+        Dim Url As String = Args("url")?.ToString()
+        If String.IsNullOrWhiteSpace(Url) Then Return "缺少 url 参数"
+        If Not Url.StartsWith("http://") AndAlso Not Url.StartsWith("https://") Then Return "只支持 http/https 地址"
+        Try
+            Process.Start(New Diagnostics.ProcessStartInfo(Url) With {.UseShellExecute = True})
+            Return "已打开：" & Url
+        Catch ex As Exception
+            Return "打开失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function GameStatus() As String
+        Try
+            If McLaunchProcess Is Nothing Then Return "当前没有正在运行的游戏进程"
+            If McLaunchProcess.HasExited Then Return "上一次的游戏进程已结束（PID " & McLaunchProcess.Id & "）"
+            Return "游戏正在运行（PID " & McLaunchProcess.Id & "，内存 " & (McLaunchProcess.WorkingSet64 \ 1024 \ 1024) & " MB）"
+        Catch ex As Exception
+            Return "读取进程状态失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function KillGame() As String
+        Try
+            If McLaunchProcess Is Nothing OrElse McLaunchProcess.HasExited Then Return "当前没有正在运行的游戏进程"
+            Dim Pid As Integer = McLaunchProcess.Id
+            McLaunchProcess.Kill()
+            Return "已结束游戏进程（PID " & Pid & "）"
+        Catch ex As Exception
+            Return "结束进程失败：" & ex.Message
+        End Try
+    End Function
+
     Private Function LaunchGame(Args As JObject) As String
         Dim Name As String = Args("instance")?.ToString()
         Dim Target As McInstance = If(String.IsNullOrWhiteSpace(Name), McInstanceSelected, FindInstanceByName(Name))
@@ -893,6 +1063,108 @@ Public Module ModAgentTools
             .Risk = 2,
             .Schema = DeleteAccountSchema,
             .Run = Function(Args) DeleteAccount(Args)})
+        '重命名实例
+        Dim RenameSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"name", New JObject From {{"type", "string"}, {"description", "Current instance name."}}},
+                {"newName", New JObject From {{"type", "string"}, {"description", "New instance name."}}}
+            }},
+            {"required", New JArray From {"name", "newName"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "rename_instance",
+            .Description = "Rename an existing instance.",
+            .Risk = 2,
+            .Schema = RenameSchema,
+            .Run = Function(Args) RenameInstance(Args)})
+
+        '实例设置
+        Dim InstSettingsSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"instance", New JObject From {{"type", "string"}, {"description", "Instance name (default: selected)."}}},
+                {"indie", New JObject From {{"type", "boolean"}, {"description", "Enable version isolation."}}},
+                {"ramMb", New JObject From {{"type", "integer"}, {"description", "Memory in MB."}}},
+                {"javaPath", New JObject From {{"type", "string"}, {"description", "Java executable path, or ""auto"" to reset."}}},
+                {"jvmArgs", New JObject From {{"type", "string"}, {"description", "Extra JVM arguments."}}}
+            }}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "set_instance_settings",
+            .Description = "Change per-instance settings: isolation, memory, Java path or JVM arguments.",
+            .Risk = 2,
+            .Schema = InstSettingsSchema,
+            .Run = Function(Args) SetInstanceSettings(Args)})
+
+        '开关 Mod
+        Dim ToggleModSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"fileName", New JObject From {{"type", "string"}, {"description", "Mod file name, with or without .disabled."}}},
+                {"enable", New JObject From {{"type", "boolean"}, {"description", "True to enable, false to disable."}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "Instance name (default: selected)."}}}
+            }},
+            {"required", New JArray From {"fileName"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "toggle_mod",
+            .Description = "Enable or disable a mod file by renaming it to/from .disabled.",
+            .Risk = 2,
+            .Schema = ToggleModSchema,
+            .Run = Function(Args) ToggleMod(Args)})
+
+        'Java 列表
+        ToolList.Add(New AgentTool With {
+            .Name = "list_java",
+            .Description = "List Java runtimes known to the launcher.",
+            .Risk = 0,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) ListJava()})
+
+        '打开文件夹 / 链接
+        Dim OpenFolderSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"path", New JObject From {{"type", "string"}, {"description", "Directory relative to .minecraft."}}}
+            }}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "open_folder",
+            .Description = "Open a folder under .minecraft in Explorer.",
+            .Risk = 1,
+            .Schema = OpenFolderSchema,
+            .Run = Function(Args) OpenFolder(Args)})
+
+        Dim OpenUrlSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"url", New JObject From {{"type", "string"}, {"description", "http/https URL to open in the browser."}}}
+            }},
+            {"required", New JArray From {"url"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "open_url",
+            .Description = "Open a URL in the default browser.",
+            .Risk = 1,
+            .Schema = OpenUrlSchema,
+            .Run = Function(Args) OpenUrl(Args)})
+
+        '游戏进程
+        ToolList.Add(New AgentTool With {
+            .Name = "game_status",
+            .Description = "Check whether a Minecraft process is running.",
+            .Risk = 0,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) GameStatus()})
+
+        ToolList.Add(New AgentTool With {
+            .Name = "kill_game",
+            .Description = "Terminate the running Minecraft process.",
+            .Risk = 2,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) KillGame()})
+
     End Sub
 
     ' ---- 文件与命令 ----
