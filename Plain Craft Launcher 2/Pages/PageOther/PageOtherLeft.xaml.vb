@@ -7,7 +7,6 @@ Public Class PageOtherLeft
         Dim IsHiddenPage As Boolean = False
         If ItemHelp.Checked AndAlso Settings.Get(Of Boolean)("UiHiddenOtherHelp") Then IsHiddenPage = True
         If ItemAbout.Checked AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then IsHiddenPage = True
-        If ItemTest.Checked AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") Then IsHiddenPage = True
         If PageSetupUI.HiddenForceShow Then IsHiddenPage = False
         '若页面错误，或尚未加载，则继续
         If IsLoad AndAlso Not IsHiddenPage Then Return
@@ -21,7 +20,7 @@ Public Class PageOtherLeft
         ElseIf Not Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then
             ItemAbout.SetChecked(True, False, False)
         Else
-            ItemTest.SetChecked(True, False, False)
+            ItemHelp.SetChecked(True, False, False)
         End If
     End Sub
     Private Sub PageOtherLeft_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
@@ -49,7 +48,7 @@ Public Class PageOtherLeft
     ''' <summary>
     ''' 勾选事件改变页面。
     ''' </summary>
-    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemAbout.Check, ItemHelp.Check, ItemTest.Check
+    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemAbout.Check, ItemHelp.Check
         '尚未初始化控件属性时，sender.Tag 为 Nothing，会导致切换到页面 0
         '若使用 IsLoaded，则会导致模拟点击不被执行（模拟点击切换页面时，控件的 IsLoaded 为 False）
         If sender.Tag IsNot Nothing Then PageChange(Val(sender.Tag))
@@ -64,9 +63,6 @@ Public Class PageOtherLeft
             Case FormMain.PageSubType.OtherAbout
                 If FrmOtherAbout Is Nothing Then FrmOtherAbout = New PageOtherAbout
                 Return FrmOtherAbout
-            Case FormMain.PageSubType.OtherTest
-                If FrmOtherTest Is Nothing Then FrmOtherTest = New PageOtherTest
-                Return FrmOtherTest
             Case Else
                 Throw New Exception("未知的更多子页面种类：" & ID)
         End Select
@@ -138,16 +134,6 @@ Public Class PageOtherLeft
             Case 2
                 OpenWebsite("https://github.com/Meloong-Git/PCL/issues/")
         End Select
-    End Sub
-    Private Sub TryVote(sender As Object, e As RouteEventArgs) Handles ItemVote.Changed
-        If Not ItemVote.Checked Then Return
-        TryVote()
-        e.Handled = True
-    End Sub
-    Public Shared Sub TryVote()
-        If MyMsgBox("是否要打开新功能投票网页？" & vbCrLf & "如果无法打开该网页，请使用 VPN 改善网络环境。",
-                    "新功能投票", "打开", "取消") = 2 Then Return
-        OpenWebsite("https://github.com/Meloong-Git/PCL/discussions/categories/%E5%8A%9F%E8%83%BD%E6%8A%95%E7%A5%A8?discussions_q=category%3A%E5%8A%9F%E8%83%BD%E6%8A%95%E7%A5%A8+sort%3Adate_created")
     End Sub
 
 End Class
