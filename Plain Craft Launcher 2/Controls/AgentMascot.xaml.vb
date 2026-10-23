@@ -972,7 +972,6 @@ Public Class AgentMascot
         Try
             BtnSend.Visibility = If(Busy, Visibility.Collapsed, Visibility.Visible)
             PanSendBusy.Visibility = If(Busy, Visibility.Visible, Visibility.Collapsed)
-            TxtInput.IsEnabled = Not Busy
             If Busy Then
                 RecStop.Visibility = Visibility.Collapsed
                 PanRing.Visibility = Visibility.Visible
@@ -1009,15 +1008,23 @@ Public Class AgentMascot
                 RunInUi(Sub()
                            Reply.Raw.Append(Full)
                            Reply.Notes.Clear()
-                           RenderEntry(Reply)
-                           RequestLayout()
+                           Try
+                               RenderEntry(Reply)
+                               RequestLayout()
+                           Catch ex As Exception
+                               Logger.Warn(ex, "AI 消息渲染失败（已忽略，不影响继续输出）")
+                           End Try
                        End Sub)
             End Sub,
             Sub(ToolName)
                 RunInUi(Sub()
                            Reply.Notes.Add("·  " & ToolName)
-                           RenderEntry(Reply)
-                           LayoutMessages()
+                           Try
+                               RenderEntry(Reply)
+                               LayoutMessages()
+                           Catch ex As Exception
+                               Logger.Warn(ex, "AI 提示渲染失败")
+                           End Try
                        End Sub)
             End Sub,
             Sub()

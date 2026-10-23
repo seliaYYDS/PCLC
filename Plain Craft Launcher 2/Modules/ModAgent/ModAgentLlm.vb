@@ -54,9 +54,9 @@ Public Module ModAgentLlm
 
         Try
             Using Response = CType(Request.GetResponse(), HttpWebResponse)
-                Dim IsSse As Boolean = If(Response.ContentType, "").Contains("event-stream")
-                Logger.Info($"[AgentLlm] contentType={Response.ContentType} sse={IsSse}")
-                If Not IsSse Then
+                Dim IsJson As Boolean = If(Response.ContentType, "").Contains("json")
+                Logger.Info($"[AgentLlm] contentType={Response.ContentType} json={IsJson}")
+                If IsJson Then
                     Using Whole As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
                         Dim RawBody As String = Whole.ReadToEnd()
                         Dim JsonAll As JObject = JObject.Parse(RawBody)
