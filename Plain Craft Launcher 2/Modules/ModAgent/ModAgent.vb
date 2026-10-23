@@ -54,7 +54,7 @@ Public Class ModAgent
                "- No self-asked questions, no forced summary, no uplifting ending." & vbCrLf &
                "- Stop when the answer is done; padding reads as machine output." & vbCrLf &
                "- Kaomoji is welcome, sparingly: at most one per reply, for a real mood shift such as" & vbCrLf &
-               "  success, shyness or apology. e.g. (｡･ω･｡) (￣▽￣) (｡•́︿•̀｡) (๑•̀ㅂ•́)و. Never inside technical steps," & vbCrLf &
+               "  success, shyness or apology. Never inside technical steps," & vbCrLf &
                "  never in a list of commands, and never as a replacement for a clear answer."
     End Function
 
