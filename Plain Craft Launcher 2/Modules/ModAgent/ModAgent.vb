@@ -132,7 +132,7 @@ Public Class ModAgent
                             })
                         End SyncLock
                     Next
-                    OnText(vbCrLf & vbCrLf & ChrW(30) & vbCrLf & vbCrLf)
+                    OnText(vbCrLf & vbCrLf)
                     Continue Do
                 End If
 

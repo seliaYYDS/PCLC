@@ -455,7 +455,7 @@ Public Class AgentMascot
             Dim Existing As UIElement = Entry.Host.Children(Index)
             Dim Kind As Integer = Models(Index).Kind
             Dim IsPanel As Boolean = TypeOf Existing Is WrapPanel
-            Dim ExpectedPanel As Boolean = (Kind <> 4 AndAlso Kind <> 5 AndAlso Kind <> 6)
+            Dim ExpectedPanel As Boolean = (Kind <> 4 AndAlso Kind <> 5 AndAlso Kind <> 6 AndAlso Kind <> 7)
             If ExpectedPanel <> IsPanel Then
                 Dim Fresh As UIElement = CreateBlockElement(Models(Index))
                 Entry.Host.Children(Index) = Fresh
@@ -516,13 +516,15 @@ Public Class AgentMascot
                 Code.AppendLine(Line)
                 Continue While
             End If
-            If String.IsNullOrWhiteSpace(Line) Then Continue While
-            Dim Trimmed As String = Line.TrimStart()
-            Dim Indent As Integer = Line.Length - Trimmed.Length
-            If Trimmed = ChrW(30) Then
-                Result.Add(New AgentBlock With {.Kind = 7, .Text = ""})
+            If String.IsNullOrWhiteSpace(Line) Then
+                If Result.Count > 0 Then
+                    If Result(Result.Count - 1).Kind <> 7 Then Result.Add(New AgentBlock With {.Kind = 7, .Text = ""})
+                End If
                 Continue While
             End If
+            Dim Trimmed As String = Line.TrimStart()
+            Dim Indent As Integer = Line.Length - Trimmed.Length
+
             If Trimmed.StartsWith("|") Then
                 Dim Rows As New List(Of String)
                 Rows.Add(Trimmed.TrimEnd())
@@ -1113,7 +1115,7 @@ Public Class AgentMascot
                            Reply.Notes.Clear()
                            Dim Summary As String = ModAgentChanges.Summary()
                            If Summary <> "" Then
-                               Reply.Raw.Append(vbCrLf & vbCrLf & ChrW(30) & vbCrLf & vbCrLf & "> " & Summary)
+                               Reply.Raw.Append(vbCrLf & vbCrLf & "> " & Summary)
                            End If
                            Reply.Host.Children.Clear()
                            RenderEntry(Reply)
