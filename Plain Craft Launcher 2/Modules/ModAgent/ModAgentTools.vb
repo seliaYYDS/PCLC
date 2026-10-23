@@ -261,6 +261,8 @@ Public Module ModAgentTools
                     Return "搜索资源：" & If(Args("query") Is Nothing, "（全部）", Args("query").ToString()) & "（" & If(Args("type") Is Nothing, "mod", Args("type").ToString()) & "）"
                 Case "list_content_versions"
                     Return "查询项目版本：" & Args("project")?.ToString()
+                Case "check_mod_updates"
+                    Return "检查 Mod 更新：" & If(Args("instance") Is Nothing, "当前选中版本", Args("instance").ToString())
                 Case "install_projects"
                     Dim Count As Integer = If(Args("items") Is Nothing, 0, CType(Args("items"), JArray).Count)
                     Return "批量安装 " & Count & " 个资源（含必需前置）"
