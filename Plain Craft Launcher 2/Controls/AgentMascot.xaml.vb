@@ -908,7 +908,7 @@ Public Class AgentMascot
             End Sub,
             Sub(ToolName)
                 RunInUi(Sub()
-                           Reply.Notes.Add("·  正在调用 " & ToolName)
+                           Reply.Notes.Add("·  " & ToolName)
                            RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)

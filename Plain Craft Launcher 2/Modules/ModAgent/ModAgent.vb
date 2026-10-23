@@ -101,7 +101,14 @@ Public Class ModAgent
                     For Each Item In ToolCalls
                         Dim Name As String = Item("function")("name").ToString()
                         Dim ArgsText As String = Item("function")("arguments")?.ToString()
-                        If OnTool IsNot Nothing Then OnTool(Name)
+                        If OnTool IsNot Nothing Then
+                            Dim Preview As New JObject()
+                            Try
+                                If Not String.IsNullOrWhiteSpace(ArgsText) Then Preview = JObject.Parse(ArgsText)
+                            Catch
+                            End Try
+                            OnTool(ModAgentTools.DescribeAction(Name, Preview, ArgsText))
+                        End If
                         Dim Result As String = RunTool(Name, ArgsText)
                         SyncLock Sync
                             Raw.Add(New JObject From {

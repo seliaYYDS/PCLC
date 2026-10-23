@@ -54,7 +54,8 @@ Public Module ModAgentContent
                 {"url", New JObject From {{"type", "string"}, {"description", "文件下载地址（来自 list_content_versions）"}}},
                 {"fileName", New JObject From {{"type", "string"}, {"description", "保存的文件名，需带扩展名"}}},
                 {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack，默认 mod"}}},
-                {"world", New JObject From {{"type", "string"}, {"description", "数据包安装到的存档名，仅 datapack 需要"}}}
+                {"world", New JObject From {{"type", "string"}, {"description", "数据包安装到的存档名，仅 datapack 需要"}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}
             }},
             {"required", New JArray From {"url", "fileName"}}
         }
@@ -100,13 +101,14 @@ Public Module ModAgentContent
             .Name = "list_worlds",
             .Description = "列出当前版本目录下的存档，用于数据包安装",
             .Risk = 0,
-            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
-            .Run = Function(Args) ListWorlds()})
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject From {{"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}}}},
+            .Run = Function(Args) ListWorlds(Args)})
         Dim ListInstalledSchema As New JObject From {
             {"type", "object"},
             {"properties", New JObject From {
                 {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
-                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}}
+                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}},
+                {"instance", New JObject From {{"type", "string"}, {"description", "目标版本名称，默认当前选中版本"}}}
             }}
         }
         List.Add(New AgentTool With {
@@ -119,10 +121,20 @@ Public Module ModAgentContent
 
     ' ---- 目录 ----
 
-    Private Function ContentFolder(Type As String, World As String) As String
-        Dim Base As String = McFolderSelected
-        Dim Instance = McInstanceSelected
-        If Instance IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Instance.PathIndie) Then Base = Instance.PathIndie
+    Private Function FindInstance(Name As String) As McInstance
+        If String.IsNullOrWhiteSpace(Name) Then Return McInstanceSelected
+        For Each Pair In McInstanceList
+            For Each Item In Pair.Value
+                If String.Equals(Item.Name, Name.Trim(), StringComparison.OrdinalIgnoreCase) Then Return Item
+            Next
+        Next
+        Return Nothing
+    End Function
+
+    Private Function ContentFolder(Type As String, World As String, InstanceName As String) As String
+        Dim Instance As McInstance = FindInstance(InstanceName)
+        If Instance Is Nothing Then Return Nothing
+        Dim Base As String = If(String.IsNullOrWhiteSpace(Instance.PathIndie), McFolderSelected, Instance.PathIndie)
         Select Case Type.ToLower()
             Case "mod" : Return IO.Path.Combine(Base, "mods")
             Case "resourcepack" : Return IO.Path.Combine(Base, "resourcepacks")
@@ -344,7 +356,9 @@ Public Module ModAgentContent
             If IO.Path.GetFileName(FileName) <> FileName Then Return "fileName 不能包含路径"
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
-            Dim Folder As String = ContentFolder(Type, World)
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            If Not String.IsNullOrWhiteSpace(InstanceName) AndAlso FindInstance(InstanceName) Is Nothing Then Return "没有找到版本：" & InstanceName
+            Dim Folder As String = ContentFolder(Type, World, InstanceName)
             If Folder Is Nothing Then Return "datapack 需要提供 world 参数" & If(Type.ToLower() = "datapack", "", "，或资源类型不受支持")
             IO.Directory.CreateDirectory(Folder)
             Dim Target As String = IO.Path.Combine(Folder, FileName)
@@ -393,11 +407,12 @@ Public Module ModAgentContent
         End Try
     End Function
 
-    Private Function ListWorlds() As String
+    Private Function ListWorlds(Args As JObject) As String
         Try
-            Dim Base As String = McFolderSelected
-            Dim Instance = McInstanceSelected
-            If Instance IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Instance.PathIndie) Then Base = Instance.PathIndie
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            Dim Instance As McInstance = FindInstance(InstanceName)
+            If Instance Is Nothing Then Return "没有找到版本：" & InstanceName
+            Dim Base As String = If(String.IsNullOrWhiteSpace(Instance.PathIndie), McFolderSelected, Instance.PathIndie)
             Dim Saves As String = IO.Path.Combine(Base, "saves")
             If Not IO.Directory.Exists(Saves) Then Return "当前没有存档目录"
             Dim Items As New JArray()
@@ -415,7 +430,9 @@ Public Module ModAgentContent
             If String.IsNullOrWhiteSpace(FileName) Then Return "缺少 fileName 参数"
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
-            Dim Folder As String = ContentFolder(Type, World)
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            If Not String.IsNullOrWhiteSpace(InstanceName) AndAlso FindInstance(InstanceName) Is Nothing Then Return "没有找到版本：" & InstanceName
+            Dim Folder As String = ContentFolder(Type, World, InstanceName)
             If Folder Is Nothing Then Return "无法确定目标目录"
             Dim Target As String = IO.Path.Combine(Folder, IO.Path.GetFileName(FileName))
             If Not IO.File.Exists(Target) Then Return "文件不存在：" & FileName
@@ -430,8 +447,9 @@ Public Module ModAgentContent
         Try
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
-            Dim Folder As String = ContentFolder(Type, World)
-            If Folder Is Nothing Then Return "无法确定目标目录"
+            Dim InstanceName As String = If(Args("instance") Is Nothing, "", Args("instance").ToString())
+            Dim Folder As String = ContentFolder(Type, World, InstanceName)
+            If Folder Is Nothing Then Return "没有找到版本或目录不受支持"
             If Not IO.Directory.Exists(Folder) Then Return "目录不存在：" & Folder
             Dim Items As New JArray()
             For Each File In IO.Directory.GetFiles(Folder)
