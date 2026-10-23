@@ -520,7 +520,7 @@ Public Class AgentMascot
             Dim Trimmed As String = Line.TrimStart()
             Dim Indent As Integer = Line.Length - Trimmed.Length
             If Trimmed = ChrW(30) Then
-                Result.Add(New AgentBlock With {.Kind = 5, .Text = ""})
+                Result.Add(New AgentBlock With {.Kind = 7, .Text = ""})
                 Continue While
             End If
             If Trimmed.StartsWith("|") Then
@@ -574,6 +574,9 @@ Public Class AgentMascot
         End If
         If Model.Kind = 6 Then
             Return BuildTable(Model.Text)
+        End If
+        If Model.Kind = 7 Then
+            Return New Border With {.Height = 12, .Background = Brushes.Transparent}
         End If
         Dim Panel As New WrapPanel With {
             .Margin = New Thickness(If(Model.Kind = 2, 4 + Math.Min(Model.Level * 3, 24), Math.Min(Model.Level * 3, 24)), 1, 0, 1),
