@@ -28,6 +28,9 @@ Public Class AgentMascot
         Public ScrollOffset As Double = 0
         Public TargetOffset As Double = 0
         Public LastAppliedOffset As Double = 0
+        Public ContentCache As Double = 0
+        Public DirtyContent As Boolean = True
+        Public StickBottom As Boolean = True
         Public NeedScroll As Boolean = False
         Public RenderedBlocks As Integer = 0
         Public ShowingThinking As Boolean = False
@@ -418,6 +421,7 @@ Public Class AgentMascot
             End If
             UpdateBlockElement(Entry.Host.Children(Index), Models(Index))
         Next
+        Entry.DirtyContent = True
         For Each Note In Entry.Notes
             Entry.Host.Children.Add(BuildHintText(Note, 11))
         Next
@@ -680,6 +684,7 @@ Public Class AgentMascot
         Dim BaseX As Double = AnchorX
         Dim Bottom As Double = AnchorY - 8
         Dim Available As Double = Math.Max(80, AnchorY - 16)
+        Dim LongMax As Double = Math.Max(60, Available * 0.62)
         For Index As Integer = Entries.Count - 1 To 0 Step -1
             Dim Entry As BubbleEntry = Entries(Index)
             Dim Box As Border = Entry.Box
@@ -701,16 +706,16 @@ Public Class AgentMascot
             Box.Visibility = Visibility.Visible
             '内容高度与视口
             Dim ContentHeight As Double = MeasureContent(Entry)
-            Entry.NeedScroll = ContentHeight > Available
+            Entry.NeedScroll = ContentHeight > LongMax
             If Entry.NeedScroll Then
-                Box.Height = Available
+                Box.Height = LongMax
                 Box.ClipToBounds = True
             Else
                 Box.Height = Double.NaN
                 Box.ClipToBounds = False
             End If
-            Box.Measure(New Size(330, If(Entry.NeedScroll, Available, Double.PositiveInfinity)))
-            Dim Height As Double = If(Entry.NeedScroll, Available, Math.Max(20, Box.DesiredSize.Height))
+            Box.Measure(New Size(330, If(Entry.NeedScroll, LongMax, Double.PositiveInfinity)))
+            Dim Height As Double = If(Entry.NeedScroll, LongMax, Math.Max(20, Box.DesiredSize.Height))
             Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
             If Bottom < 8 Then
@@ -743,7 +748,11 @@ Public Class AgentMascot
     Private Sub UpdateScrollBar(Entry As BubbleEntry)
         Try
             If Entry.Thumb Is Nothing OrElse Entry.Track Is Nothing OrElse Entry.Viewer Is Nothing Then Return
-            Dim Content As Double = MeasureContent(Entry)
+            If Entry.DirtyContent Then
+                Entry.ContentCache = MeasureContent(Entry)
+                Entry.DirtyContent = False
+            End If
+            Dim Content As Double = Entry.ContentCache
             Dim Viewport As Double = Entry.Viewer.ViewportHeight
             If Viewport <= 0 OrElse Content <= Viewport + 0.5 Then
                 Entry.Thumb.Visibility = Visibility.Collapsed
@@ -771,24 +780,36 @@ Public Class AgentMascot
 
     Private Sub OnWheel(sender As Object, e As MouseWheelEventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
+        Dim Position As Point = e.GetPosition(PanMessageLayer)
         Dim BestEntry As BubbleEntry = Nothing
         Dim BestOverflow As Double = 0
         For Each Entry In Entries
             If Entry.Box.Visibility <> Visibility.Visible Then Continue For
             If Entry.Viewer Is Nothing Then Continue For
-            If Entry.Viewer.ScrollableHeight > BestOverflow Then
-                BestOverflow = Entry.Viewer.ScrollableHeight
+            Dim Left As Double = Canvas.GetLeft(Entry.Box)
+            Dim Top As Double = Canvas.GetTop(Entry.Box)
+            If Double.IsNaN(Left) OrElse Double.IsNaN(Top) Then Continue For
+            Dim Inside As Boolean = Position.X >= Left AndAlso Position.X <= Left + Entry.Box.ActualWidth AndAlso
+                                    Position.Y >= Top AndAlso Position.Y <= Top + Entry.Box.ActualHeight
+            Dim Overflow As Double = Entry.Viewer.ScrollableHeight
+            If Inside AndAlso Overflow > 0.5 Then
+                BestEntry = Entry
+                BestOverflow = Overflow
+                Exit For
+            End If
+            If Overflow > BestOverflow Then
+                BestOverflow = Overflow
                 BestEntry = Entry
             End If
         Next
         If BestEntry IsNot Nothing AndAlso BestOverflow > 0.5 Then
-            Dim Target As Double = BestEntry.TargetOffset - e.Delta / 3.0
             Dim AtTop As Boolean = BestEntry.Viewer.VerticalOffset <= 0.5
             Dim AtBottom As Boolean = BestEntry.Viewer.VerticalOffset >= BestOverflow - 0.5
             If (e.Delta > 0 AndAlso AtTop) OrElse (e.Delta < 0 AndAlso AtBottom) Then
-                '已到顶部，交给隐藏逻辑
+                '边界：交给隐藏/恢复逻辑
             Else
-                BestEntry.TargetOffset = Math.Max(0, Math.Min(BestOverflow, Target))
+                BestEntry.StickBottom = False
+                BestEntry.TargetOffset = Math.Max(0, Math.Min(BestOverflow, BestEntry.Viewer.VerticalOffset - e.Delta / 3.0))
                 StartFollow()
                 e.Handled = True
                 Return
