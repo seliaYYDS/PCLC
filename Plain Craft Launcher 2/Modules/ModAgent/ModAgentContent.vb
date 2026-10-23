@@ -19,7 +19,8 @@ Public Module ModAgentContent
                 {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器：fabric/forge/neoforge/quilt，仅对 mod 有效"}}},
                 {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10，最多 30"}}},
                 {"offset", New JObject From {{"type", "integer"}, {"description", "跳过前多少条，用于翻页"}}},
-                {"sort", New JObject From {{"type", "string"}, {"description", "排序：relevance/downloads/newest/updated，默认 relevance"}}}
+                {"sort", New JObject From {{"type", "string"}, {"description", "排序：relevance/downloads/newest/updated，默认 relevance"}}},
+                {"source", New JObject From {{"type", "string"}, {"description", "来源：modrinth/curseforge/both，默认 modrinth"}}}
             }}
         }
         List.Add(New AgentTool With {
@@ -35,7 +36,8 @@ Public Module ModAgentContent
                 {"project", New JObject From {{"type", "string"}, {"description", "项目 slug 或 ID"}}},
                 {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本"}}},
                 {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器"}}},
-                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10"}}}
+                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10"}}},
+                {"source", New JObject From {{"type", "string"}, {"description", "来源：modrinth/curseforge，默认按 project 形式：数字为 CurseForge"}}}
             }},
             {"required", New JArray From {"project"}}
         }
@@ -161,6 +163,8 @@ Public Module ModAgentContent
 
     Private Function SearchContent(Args As JObject) As String
         Try
+            Dim Source As String = If(Args("source") Is Nothing, "modrinth", Args("source").ToString().ToLower())
+            If Source = "curseforge" Then Return SearchCurseForge(Args)
             Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
@@ -202,6 +206,8 @@ Public Module ModAgentContent
         Try
             Dim Project As String = Args("project")?.ToString()
             If String.IsNullOrWhiteSpace(Project) Then Return "缺少 project 参数"
+            Dim Source As String = If(Args("source") Is Nothing, If(Project.All(Function(C) Char.IsDigit(C)), "curseforge", "modrinth"), Args("source").ToString().ToLower())
+            If Source = "curseforge" Then Return ListCurseForgeFiles(Project, Args)
             Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
             Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
             Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
@@ -235,6 +241,97 @@ Public Module ModAgentContent
         End Try
     End Function
 
+    ' ---- CurseForge ----
+
+    Private Function CurseForgeClassId(Type As String) As Integer
+        Select Case TypeToProjectType(Type)
+            Case "modpack" : Return 4471
+            Case "datapack" : Return 6945
+            Case "shader" : Return 6552
+            Case "resourcepack" : Return 12
+            Case Else : Return 6
+        End Select
+    End Function
+
+    Private Function CurseForgeLoaderId(Loader As String) As Integer
+        Select Case Loader.ToLower()
+            Case "forge" : Return 1
+            Case "fabric" : Return 4
+            Case "quilt" : Return 5
+            Case "neoforge" : Return 6
+            Case Else : Return 0
+        End Select
+    End Function
+
+    Private Function SearchCurseForge(Args As JObject) As String
+        Try
+            Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
+            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+            Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
+            Dim Url As String = "https://api.curseforge.com/v1/mods/search?gameId=432&pageSize=" & Limit & "&index=" & Offset &
+                                "&classId=" & CurseForgeClassId(Type)
+            If Query <> "" Then Url &= "&searchFilter=" & Uri.EscapeDataString(Query)
+            If GameVersion <> "" Then Url &= "&gameVersion=" & Uri.EscapeDataString(GameVersion)
+            If Loader <> "" Then
+                Dim LoaderId As Integer = CurseForgeLoaderId(Loader)
+                If LoaderId > 0 Then Url &= "&modLoaderType=" & LoaderId
+            End If
+            Dim Json As JToken = DlModRequest(Url)
+            Dim Data As JArray = TryCast(Json("data"), JArray)
+            If Data Is Nothing Then Return "搜索失败：返回格式异常"
+            Dim Hits As New JArray()
+            For Each Item In Data
+                Hits.Add(New JObject From {
+                    {"id", Item("id")},
+                    {"slug", Item("slug")?.ToString()},
+                    {"title", Item("name")?.ToString()},
+                    {"description", Item("summary")?.ToString()},
+                    {"downloads", Item("downloadCount")},
+                    {"source", "curseforge"}
+                })
+            Next
+            Dim Total As JToken = Json("pagination")?.Item("totalCount")
+            Dim Wrapper As New JObject From {{"source", "curseforge"}, {"total", If(Total, JValue.CreateNull())}, {"offset", Offset}, {"hits", Hits}}
+            Return Wrapper.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "搜索失败（CurseForge）：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ListCurseForgeFiles(Project As String, Args As JObject) As String
+        Try
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+            Dim Url As String = "https://api.curseforge.com/v1/mods/" & Uri.EscapeDataString(Project) & "/files?pageSize=" & Limit
+            If GameVersion <> "" Then Url &= "&gameVersion=" & Uri.EscapeDataString(GameVersion)
+            If Loader <> "" Then
+                Dim LoaderId As Integer = CurseForgeLoaderId(Loader)
+                If LoaderId > 0 Then Url &= "&modLoaderType=" & LoaderId
+            End If
+            Dim Json As JToken = DlModRequest(Url)
+            Dim Data As JArray = TryCast(Json("data"), JArray)
+            If Data Is Nothing Then Return "获取版本失败"
+            Dim Result As New JArray()
+            For Each Item In Data
+                Result.Add(New JObject From {
+                    {"fileId", Item("id")},
+                    {"version", Item("displayName")?.ToString()},
+                    {"fileName", Item("fileName")?.ToString()},
+                    {"url", Item("downloadUrl")?.ToString()},
+                    {"gameVersions", Item("gameVersions")},
+                    {"releaseType", Item("releaseType")},
+                    {"source", "curseforge"}
+                })
+            Next
+            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "获取版本失败（CurseForge）：" & ex.Message
+        End Try
+    End Function
     ' ---- 安装 ----
 
     Private Function InstallContent(Args As JObject) As String
@@ -242,6 +339,8 @@ Public Module ModAgentContent
             Dim Url As String = Args("url")?.ToString()
             Dim FileName As String = Args("fileName")?.ToString()
             If String.IsNullOrWhiteSpace(Url) OrElse String.IsNullOrWhiteSpace(FileName) Then Return "缺少 url 或 fileName 参数"
+            If Url.StartsWith("null") Then Return "该文件未提供直接下载地址（作者可能关闭了第三方下载），请改为在启动器下载页安装"
+            If Not Url.StartsWith("http") Then Return "下载地址无效：" & Url
             If IO.Path.GetFileName(FileName) <> FileName Then Return "fileName 不能包含路径"
             Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
             Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
