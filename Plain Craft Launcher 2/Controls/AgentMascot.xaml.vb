@@ -8,12 +8,9 @@ Public Class AgentMascot
     Private DragOffset As Point
     Private DragStart As Point
 
-    '消息：每条独立容器，不参与任何统一滚动
     Private ReadOnly Messages As New List(Of Border)
     Private HiddenNewest As Integer = 0
 
-    '跟随
-    Private WithEvents FollowTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
     Private CurrentX As Double = 0
@@ -21,8 +18,14 @@ Public Class AgentMascot
     Private TargetX As Double = 0
     Private TargetY As Double = 0
     Private HasPosition As Boolean = False
-    Private ReadOnly LagX As New List(Of Double)
-    Private ReadOnly LagY As New List(Of Double)
+    Private RenderingHooked As Boolean = False
+    Private LastFrame As TimeSpan = TimeSpan.Zero
+
+    Private Structure OffsetSample
+        Public Stamp As TimeSpan
+        Public Offset As Point
+    End Structure
+    Private ReadOnly Samples As New List(Of OffsetSample)
 
     Public Sub New()
         InitializeComponent()
@@ -34,17 +37,15 @@ Public Class AgentMascot
         AddHandler ImgMascot.MouseLeftButtonUp, AddressOf Mascot_MouseUp
         AddHandler Me.PreviewMouseWheel, AddressOf OnWheel
         AddHandler SizeChanged, Sub()
-                                       PositionMascot()
-                                       PanMessageLayer.Width = Math.Max(0, ActualWidth)
-                                       PanMessageLayer.Height = Math.Max(0, ActualHeight)
-                                   End Sub
+                                    PositionMascot()
+                                    PanMessageLayer.Width = Math.Max(0, ActualWidth)
+                                    PanMessageLayer.Height = Math.Max(0, ActualHeight)
+                                End Sub
         AddHandler Me.Loaded, Sub() RefreshState()
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
-        FollowTimer.Start()
         AddSway(PanInput, 3.0, 3.0)
     End Sub
 
-    ''' <summary>按设置刷新显示状态。</summary>
     Public Sub RefreshState()
         Visibility = If(Settings.Get(Of Boolean)("AgentEnabled"), Visibility.Visible, Visibility.Collapsed)
         If Visibility = Visibility.Visible Then
@@ -53,15 +54,12 @@ Public Class AgentMascot
         End If
     End Sub
 
-    ''' <summary>切换表情。</summary>
     Public Sub SetMood(Mood As String)
         Try
             ImgMascot.Source = New BitmapImage(New Uri("pack://application:,,,/PCLC;component/Images/Celia/celia_" & Mood & ".png"))
         Catch
         End Try
     End Sub
-
-    '位置
 
     Private Sub PositionMascot()
         If ActualWidth <= 0 Then Return
@@ -92,42 +90,68 @@ Public Class AgentMascot
         TargetY = Math.Max(8, Math.Min(ActualHeight - InputHeight - 8, MascotY + 140 - InputHeight))
     End Sub
 
-    Private Sub FollowTimer_Tick(sender As Object, e As EventArgs) Handles FollowTimer.Tick
+    Private Sub StartFollow()
+        If RenderingHooked Then Return
+        AddHandler CompositionTarget.Rendering, AddressOf OnRendering
+        RenderingHooked = True
+        LastFrame = TimeSpan.Zero
+    End Sub
+
+    Private Sub StopFollow()
+        If Not RenderingHooked Then Return
+        RemoveHandler CompositionTarget.Rendering, AddressOf OnRendering
+        RenderingHooked = False
+    End Sub
+
+    Private Sub OnRendering(sender As Object, e As EventArgs)
         If PanInput.Visibility <> Visibility.Visible Then Return
+        Dim Args = TryCast(e, RenderingEventArgs)
+        Dim Now As TimeSpan = If(Args Is Nothing, TimeSpan.FromMilliseconds(TimeSpan.FromTicks(DateTime.Now.Ticks).TotalMilliseconds), Args.RenderingTime)
+        Dim Delta As Double = 1 / 60.0
+        If LastFrame <> TimeSpan.Zero Then Delta = Math.Max(0.001, Math.Min(0.1, (Now - LastFrame).TotalSeconds))
+        LastFrame = Now
+
         If Not HasPosition Then
             CurrentX = TargetX
             CurrentY = TargetY
             AnchorX = TargetX
             AnchorY = TargetY
             HasPosition = True
+            Samples.Clear()
         Else
-            CurrentX += (TargetX - CurrentX) * 0.22
-            CurrentY += (TargetY - CurrentY) * 0.22
+            Dim Factor As Double = 1 - Math.Exp(-Delta / 0.09)
+            CurrentX += (TargetX - CurrentX) * Factor
+            CurrentY += (TargetY - CurrentY) * Factor
         End If
         Canvas.SetLeft(PanInput, CurrentX)
         Canvas.SetTop(PanInput, CurrentY)
-        Dim OffsetX As Double = CurrentX - AnchorX
-        Dim OffsetY As Double = CurrentY - AnchorY
-        While LagX.Count < Messages.Count
-            LagX.Add(0)
-            LagY.Add(0)
+
+        Dim Offset As New Point(CurrentX - AnchorX, CurrentY - AnchorY)
+        Samples.Add(New OffsetSample With {.Stamp = Now, .Offset = Offset})
+        While Samples.Count > 0 AndAlso (Now - Samples(0).Stamp).TotalSeconds > 2
+            Samples.RemoveAt(0)
         End While
+
         For Index As Integer = 0 To Messages.Count - 1
-            Dim Speed As Double = Math.Max(0.35, 0.9 - Index * 0.06)
-            LagX(Index) += (OffsetX - LagX(Index)) * Speed
-            LagY(Index) += (OffsetY - LagY(Index)) * Speed
+            Dim Delay As Double = 0.05 + Math.Min(Index, 8) * 0.045
+            Dim WantTime As TimeSpan = Now - TimeSpan.FromSeconds(Delay)
+            Dim Sample As Point = Offset
+            For i As Integer = Samples.Count - 1 To 0 Step -1
+                If Samples(i).Stamp <= WantTime Then
+                    Sample = Samples(i).Offset
+                    Exit For
+                End If
+            Next
             Dim Group As TransformGroup = TryCast(Messages(Index).RenderTransform, TransformGroup)
             If Group IsNot Nothing AndAlso Group.Children.Count > 0 Then
                 Dim Follow As TranslateTransform = TryCast(Group.Children(0), TranslateTransform)
                 If Follow IsNot Nothing Then
-                    Follow.X = LagX(Index)
-                    Follow.Y = LagY(Index)
+                    Follow.X = Sample.X
+                    Follow.Y = Sample.Y
                 End If
             End If
         Next
     End Sub
-
-    '拖拽
 
     Private Sub Mascot_MouseDown(sender As Object, e As MouseButtonEventArgs)
         DragStart = e.GetPosition(Me)
@@ -161,8 +185,6 @@ Public Class AgentMascot
         IsDragging = False
     End Sub
 
-    '气泡
-
     Private Sub ToggleBubble()
         If PanInput.Visibility = Visibility.Visible Then
             HideBubble()
@@ -174,6 +196,7 @@ Public Class AgentMascot
         AnchorX = TargetX
         AnchorY = TargetY
         HasPosition = True
+        Samples.Clear()
         PanInput.Visibility = Visibility.Visible
         PanMessageLayer.Visibility = Visibility.Visible
         Canvas.SetLeft(PanInput, CurrentX)
@@ -185,12 +208,14 @@ Public Class AgentMascot
             If Messages.Count = 0 Then AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
         End If
         LayoutMessages()
+        StartFollow()
         TxtInput.Focus()
     End Sub
 
     Private Sub HideBubble()
         PanInput.Visibility = Visibility.Collapsed
         PanMessageLayer.Visibility = Visibility.Collapsed
+        StopFollow()
     End Sub
 
     Private Function AddBubble(Text As String, IsUser As Boolean) As TextBlock
@@ -251,8 +276,7 @@ Public Class AgentMascot
     Private Sub ClearMessages()
         PanMessageLayer.Children.Clear()
         Messages.Clear()
-        LagX.Clear()
-        LagY.Clear()
+        Samples.Clear()
         HiddenNewest = 0
         ModAgent.Instance.Clear()
         AddBubble("对话已清空。", False)
@@ -270,8 +294,6 @@ Public Class AgentMascot
             End If
         Next
     End Sub
-
-    '发送
 
     Private Sub SendMessage()
         Dim Text As String = TxtInput.Text.Trim()
