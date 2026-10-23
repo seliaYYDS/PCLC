@@ -299,6 +299,9 @@ Public Class AgentMascot
             LayoutRequested = False
             LayoutMessages()
         End If
+        For Each Entry In Entries
+            If Entry.StickBottom Then ScrollToBottom(Entry)
+        Next
     End Sub
     Private Sub SquashMascot(Scale As Double)
         Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
@@ -915,6 +918,20 @@ Public Class AgentMascot
             If Entry.Viewer.ScrollableHeight <= 0 Then Return
             Entry.Viewer.ScrollToVerticalOffset(Entry.Viewer.ScrollableHeight)
             Entry.LastAppliedOffset = Entry.Viewer.VerticalOffset
+            '布局可能还有一次迟到的更新，下一轮 Dispatcher 再确认一次
+            Entry.Viewer.Dispatcher.BeginInvoke(
+                Sub()
+                    Try
+                        If Entry.StickBottom AndAlso Entry.Viewer.ScrollableHeight > 0 Then
+                            If Entry.Viewer.VerticalOffset < Entry.Viewer.ScrollableHeight - 0.5 Then
+                                Entry.Viewer.ScrollToVerticalOffset(Entry.Viewer.ScrollableHeight)
+                                Entry.LastAppliedOffset = Entry.Viewer.VerticalOffset
+                            End If
+                        End If
+                    Catch
+                    End Try
+                End Sub,
+                Windows.Threading.DispatcherPriority.Background)
         Catch
         End Try
     End Sub
@@ -1128,6 +1145,7 @@ Public Class AgentMascot
                            Try
                                RenderEntry(Reply)
                                LayoutMessages()
+                               If Reply.StickBottom Then ScrollToBottom(Reply)
                            Catch ex As Exception
                                Logger.Warn(ex, "AI 提示渲染失败")
                            End Try
@@ -1174,6 +1192,7 @@ Public Class AgentMascot
                                End If
                                RenderEntry(Reply)
                                LayoutMessages()
+                               If Reply.StickBottom Then ScrollToBottom(Reply)
                            Catch ex As Exception
                                Logger.Warn(ex, "AI 工具结果渲染失败")
                            End Try
