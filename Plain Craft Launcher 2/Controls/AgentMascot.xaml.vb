@@ -79,6 +79,21 @@ Public Class AgentMascot
                                     PanMessageLayer.Height = Math.Max(0, ActualHeight)
                                 End Sub
         AddHandler Me.Loaded, Sub() RefreshState()
+        AddHandler PanSendBusy.MouseEnter, Sub()
+                                                If PanSendBusy.Visibility = Visibility.Visible Then
+                                                    PanRing.Visibility = Visibility.Collapsed
+                                                    RecStop.Visibility = Visibility.Visible
+                                                End If
+                                            End Sub
+        AddHandler PanSendBusy.MouseLeave, Sub()
+                                                PanRing.Visibility = Visibility.Visible
+                                                RecStop.Visibility = Visibility.Collapsed
+                                            End Sub
+        AddHandler PanSendBusy.MouseLeftButtonUp, Sub()
+                                                      ModAgent.Instance.Cancel()
+                                                      PanRing.Visibility = Visibility.Collapsed
+                                                      RecStop.Visibility = Visibility.Visible
+                                                  End Sub
         ModAgent.Instance.ConfirmHandler = AddressOf ConfirmTool
         Dim MascotGroup As New TransformGroup()
         MascotGroup.Children.Add(TransMascot)
@@ -954,17 +969,17 @@ Public Class AgentMascot
 
     Private Sub SetBusy(Busy As Boolean)
         Try
-            BtnSend.IsEnabled = Not Busy
+            BtnSend.Visibility = If(Busy, Visibility.Collapsed, Visibility.Visible)
+            PanSendBusy.Visibility = If(Busy, Visibility.Visible, Visibility.Collapsed)
             TxtInput.IsEnabled = Not Busy
-            BtnSend.Text = If(Busy, "···", "发送")
             If Busy Then
-                Dim Pulse As New DoubleAnimation(0.35, 1, New Duration(TimeSpan.FromMilliseconds(600))) With {
-                    .AutoReverse = True,
+                RecStop.Visibility = Visibility.Collapsed
+                PanRing.Visibility = Visibility.Visible
+                Dim Spin As New DoubleAnimation(0, 360, New Duration(TimeSpan.FromMilliseconds(900))) With {
                     .RepeatBehavior = RepeatBehavior.Forever}
-                BtnSend.BeginAnimation(UIElement.OpacityProperty, Pulse)
+                RingRotate.BeginAnimation(RotateTransform.AngleProperty, Spin)
             Else
-                BtnSend.BeginAnimation(UIElement.OpacityProperty, Nothing)
-                BtnSend.Opacity = 1
+                RingRotate.BeginAnimation(RotateTransform.AngleProperty, Nothing)
             End If
         Catch
         End Try
@@ -1017,7 +1032,11 @@ Public Class AgentMascot
             Sub(Message)
                 RunInUi(Sub()
                            SetBusy(False)
-                           Reply.Raw.Append("出错了：" & Message)
+                           If Message = "已取消" Then
+                               Reply.Raw.Append("（已停止）")
+                           Else
+                               Reply.Raw.Append("出错了：" & Message)
+                           End If
                            RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)

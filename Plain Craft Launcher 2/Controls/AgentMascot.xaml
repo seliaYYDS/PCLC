@@ -52,8 +52,23 @@
                                 ToolTip="关闭对话"/>
             <TextBox x:Name="TxtInput" Grid.Column="2" Margin="0,6,6,6" FontSize="13" VerticalContentAlignment="Center"
                      Background="{x:Null}" BorderThickness="0" Padding="4,0" KeyDown="TxtInput_KeyDown"/>
-            <local:MyButton x:Name="BtnSend" Grid.Column="3" Text="发送" MinWidth="58" Height="30"
-                            Margin="0,0,7,0" VerticalAlignment="Center" Padding="10,0"/>
+            <Grid Grid.Column="3" Margin="0,0,7,0" VerticalAlignment="Center">
+                <local:MyButton x:Name="BtnSend" Text="发送" MinWidth="58" Height="30" Padding="10,0"/>
+                <Border x:Name="PanSendBusy" Width="58" Height="30" CornerRadius="6" Background="#E8EAFF"
+                        Visibility="Collapsed" Cursor="Hand">
+                    <Grid>
+                        <Canvas x:Name="PanRing" Width="18" Height="18" RenderTransformOrigin="0.5,0.5">
+                            <Canvas.RenderTransform>
+                                <RotateTransform x:Name="RingRotate"/>
+                            </Canvas.RenderTransform>
+                            <Path Data="M9,1.5 A7.5,7.5 0 1 1 2.2,4.6" Stroke="#5B6CFF" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                        </Canvas>
+                        <Rectangle x:Name="RecStop" Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="#5B6CFF"
+                                   Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 

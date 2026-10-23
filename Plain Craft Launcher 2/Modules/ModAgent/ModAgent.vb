@@ -7,7 +7,8 @@ Public Class ModAgent
 
     Public ReadOnly Raw As New JArray()
     Public IsWaiting As Boolean = False
-    Public MaxRounds As Integer = 6
+    Public MaxRounds As Integer = Integer.MaxValue
+    Public CancelRequested As Boolean = False
     ''' <summary>高风险操作的确认回调：参数为工具名与说明，返回是否允许。</summary>
     Public ConfirmHandler As Func(Of String, String, Boolean)
     Private ReadOnly Confirmed As New HashSet(Of String)
@@ -70,6 +71,11 @@ Public Class ModAgent
         End Try
     End Sub
 
+    ''' <summary>中止当前请求。</summary>
+    Public Sub Cancel()
+        CancelRequested = True
+        ModAgentLlm.Cancel()
+    End Sub
     ''' <summary>发送用户消息并跑完工具循环；回调在调用线程触发。</summary>
     Public Sub Send(UserText As String, OnText As Action(Of String), OnTool As Action(Of String), OnDone As Action, OnFail As Action(Of String))
         EnsureInit()
@@ -78,15 +84,19 @@ Public Class ModAgent
             Return
         End If
         IsWaiting = True
+        CancelRequested = False
         SyncLock Sync
             Raw.Add(New JObject From {{"role", "user"}, {"content", UserText}})
             SaveSession()
         End SyncLock
 
         Try
-            Dim Rounds As Integer = 0
-            Do While Rounds < MaxRounds
-                Rounds += 1
+            Do While True
+                If CancelRequested Then
+                    IsWaiting = False
+                    OnFail("已取消")
+                    Return
+                End If
                 Dim Snapshot As JArray
                 SyncLock Sync
                     Snapshot = CType(Raw.DeepClone(), JArray)
@@ -99,6 +109,7 @@ Public Class ModAgent
                         Raw.Add(Message)
                     End SyncLock
                     For Each Item In ToolCalls
+                        If CancelRequested Then Exit For
                         Dim Name As String = Item("function")("name").ToString()
                         Dim ArgsText As String = Item("function")("arguments")?.ToString()
                         If OnTool IsNot Nothing Then
@@ -133,7 +144,11 @@ Public Class ModAgent
             OnFail("工具调用次数超过上限（" & MaxRounds & " 轮）")
         Catch ex As Exception
             IsWaiting = False
-            OnFail(ex.Message)
+            If CancelRequested Then
+                OnFail("已取消")
+            Else
+                OnFail(ex.Message)
+            End If
         End Try
     End Sub
 
