@@ -50,81 +50,99 @@ Public Module ModAgentLlm
         End Using
 
         Dim Content As New StringBuilder()
-        Dim ToolCalls As New JObject() 'index -> {id, name, arguments}
+        Dim ToolCalls As New JObject()
+        Dim ChunkCount As Integer = 0
+        Dim Watch As Stopwatch = Stopwatch.StartNew()
 
         Try
             Using Response = CType(Request.GetResponse(), HttpWebResponse)
-                Dim IsJson As Boolean = If(Response.ContentType, "").Contains("json")
-                Logger.Info($"[AgentLlm] contentType={Response.ContentType} json={IsJson}")
-                If IsJson Then
-                    Using Whole As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
-                        Dim RawBody As String = Whole.ReadToEnd()
-                        Dim JsonAll As JObject = JObject.Parse(RawBody)
-                        Dim Msg = TryCast(JsonAll("choices")?.Item(0)?("message"), JObject)
-                        If Msg IsNot Nothing Then
-                            Dim TextToken = Msg("content")
-                            Dim Full As String = ExtractText(TextToken)
-                            If Not String.IsNullOrEmpty(Full) Then
-                                Content.Append(Full)
-                                OnDelta(Full)
-                            End If
-                            Dim CallsAll = TryCast(Msg("tool_calls"), JArray)
-                            If CallsAll IsNot Nothing Then
-                                For Each Item In CallsAll
-                                    Dim Idx As String = ToolCalls.Count.ToString()
-                                    ToolCalls(Idx) = New JObject From {
-                                        {"id", Item("id")?.ToString()},
-                                        {"name", Item("function")?("name")?.ToString()},
-                                        {"arguments", Item("function")?("arguments")?.ToString()}}
-                                Next
-                            End If
-                        End If
-                    End Using
-                    Logger.Info($"[AgentLlm] content={Content.Length} tools={ToolCalls.Count}")
-        Return BuildMessage(Content, ToolCalls)
-                End If
+                Dim ContentType As String = If(Response.ContentType, "")
                 Using Reader As New StreamReader(Response.GetResponseStream(), Encoding.UTF8)
+                    Dim FirstLine As String = Nothing
                     Do While True
                         Dim Line As String = Reader.ReadLine()
                         If Line Is Nothing Then Exit Do
-                        If Not Line.StartsWith("data:") Then Continue Do
-                        Dim Payload As String = Line.Substring(5).Trim()
-                        If Payload = "[DONE]" Then Exit Do
-                        If Payload.Length = 0 Then Continue Do
-                        Dim Json As JObject
-                        Try
-                            Json = JObject.Parse(Payload)
-                        Catch
-                            Continue Do
-                        End Try
-                        Dim Choices = TryCast(Json("choices"), JArray)
-                        If Choices Is Nothing OrElse Choices.Count = 0 Then Continue Do
-                        Dim Delta = TryCast(Choices(0)("delta"), JObject)
-                        If Delta Is Nothing Then Continue Do
-
-                        Dim Text As String = ExtractText(Delta("content"))
-                        If Not String.IsNullOrEmpty(Text) Then
-                            Content.Append(Text)
-                            OnDelta(Text)
-                        End If
-
-                        Dim Calls = TryCast(Delta("tool_calls"), JArray)
-                        If Calls IsNot Nothing Then
-                            For Each Item In CType(Calls, JArray)
-                                Dim Index As String = If(Item("index") Is Nothing, "0", Item("index").ToString())
-                                If ToolCalls(Index) Is Nothing Then
-                                    ToolCalls(Index) = New JObject From {{"id", ""}, {"name", ""}, {"arguments", ""}}
-                                End If
-                                Dim Entry = CType(ToolCalls(Index), JObject)
-                                If Item("id") IsNot Nothing Then Entry("id") = Item("id").ToString()
-                                Dim FunctionBody = TryCast(Item("function"), JObject)
-                                If FunctionBody IsNot Nothing Then
-                                    If FunctionBody("name") IsNot Nothing Then Entry("name") = Entry("name").ToString() & FunctionBody("name").ToString()
-                                    If FunctionBody("arguments") IsNot Nothing Then Entry("arguments") = Entry("arguments").ToString() & FunctionBody("arguments").ToString()
-                                End If
-                            Next
-                        End If
+                        If String.IsNullOrWhiteSpace(Line) Then Continue Do
+                        FirstLine = Line
+                        Exit Do
                     Loop
+                    Dim IsSse As Boolean = FirstLine IsNot Nothing AndAlso FirstLine.TrimStart().StartsWith("data:")
+                    Logger.Info($"[AgentLlm] contentType={ContentType} sse={IsSse}")
+                    If Not IsSse Then
+                        Dim RawBody As String = If(FirstLine, "") & vbLf & Reader.ReadToEnd()
+                        If Not String.IsNullOrWhiteSpace(RawBody) Then
+                            Dim JsonAll As JObject = JObject.Parse(RawBody)
+                            Dim Msg = TryCast(JsonAll("choices")?.Item(0)?("message"), JObject)
+                            If Msg IsNot Nothing Then
+                                Dim Full As String = ExtractText(Msg("content"))
+                                If Not String.IsNullOrEmpty(Full) Then
+                                    Content.Append(Full)
+                                    ChunkCount += 1
+                                    OnDelta(Full)
+                                End If
+                                Dim CallsAll = TryCast(Msg("tool_calls"), JArray)
+                                If CallsAll IsNot Nothing Then
+                                    For Each Item In CallsAll
+                                        Dim Idx As String = ToolCalls.Count.ToString()
+                                        ToolCalls(Idx) = New JObject From {
+                                            {"id", Item("id")?.ToString()},
+                                            {"name", Item("function")?("name")?.ToString()},
+                                            {"arguments", Item("function")?("arguments")?.ToString()}}
+                                    Next
+                                End If
+                            End If
+                        End If
+                    Else
+                        Dim Pending As String = FirstLine
+                        Do While True
+                            Dim Line As String
+                            If Pending IsNot Nothing Then
+                                Line = Pending
+                                Pending = Nothing
+                            Else
+                                Line = Reader.ReadLine()
+                            End If
+                            If Line Is Nothing Then Exit Do
+                            If Not Line.TrimStart().StartsWith("data:") Then Continue Do
+                            Dim Payload As String = Line.TrimStart().Substring(5).Trim()
+                            If Payload = "[DONE]" Then Exit Do
+                            If Payload.Length = 0 Then Continue Do
+                            Dim Json As JObject
+                            Try
+                                Json = JObject.Parse(Payload)
+                            Catch
+                                Continue Do
+                            End Try
+                            Dim Choices = TryCast(Json("choices"), JArray)
+                            If Choices Is Nothing OrElse Choices.Count = 0 Then Continue Do
+                            Dim Delta = TryCast(Choices(0)("delta"), JObject)
+                            If Delta Is Nothing Then Continue Do
+
+                            Dim Text As String = ExtractText(Delta("content"))
+                            If Not String.IsNullOrEmpty(Text) Then
+                                Content.Append(Text)
+                                ChunkCount += 1
+                                OnDelta(Text)
+                            End If
+
+                            Dim Calls = TryCast(Delta("tool_calls"), JArray)
+                            If Calls IsNot Nothing Then
+                                For Each Item In CType(Calls, JArray)
+                                    Dim Index As String = If(Item("index") Is Nothing, "0", Item("index").ToString())
+                                    If ToolCalls(Index) Is Nothing Then
+                                        ToolCalls(Index) = New JObject From {{"id", ""}, {"name", ""}, {"arguments", ""}}
+                                    End If
+                                    Dim Entry = CType(ToolCalls(Index), JObject)
+                                    If Item("id") IsNot Nothing Then Entry("id") = Item("id").ToString()
+                                    Dim FunctionBody = TryCast(Item("function"), JObject)
+                                    If FunctionBody IsNot Nothing Then
+                                        If FunctionBody("name") IsNot Nothing Then Entry("name") = Entry("name").ToString() & FunctionBody("name").ToString()
+                                        If FunctionBody("arguments") IsNot Nothing Then Entry("arguments") = Entry("arguments").ToString() & FunctionBody("arguments").ToString()
+                                    End If
+                                Next
+                            End If
+                        Loop
+                    End If
                 End Using
             End Using
         Catch ex As WebException
@@ -144,6 +162,8 @@ Public Module ModAgentLlm
             CurrentRequest = Nothing
         End Try
 
+        Watch.Stop()
+        Logger.Info($"[AgentLlm] chunks={ChunkCount} content={Content.Length} tools={ToolCalls.Count} elapsed={Watch.ElapsedMilliseconds}ms")
         Return BuildMessage(Content, ToolCalls)
     End Function
 
