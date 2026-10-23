@@ -20,6 +20,10 @@ Public Class AgentMascot
         Public IsUser As Boolean
         Public Notes As New List(Of String)
         Public Viewer As ScrollViewer
+        Public Thumb As Border
+        Public Track As FrameworkElement
+        Public DragStartY As Double = 0
+        Public DragStartOffset As Double = 0
         Public Shift As New TranslateTransform()
         Public ScrollOffset As Double = 0
         Public TargetOffset As Double = 0
@@ -38,6 +42,8 @@ Public Class AgentMascot
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
+    Private WithEvents LayoutTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(50)}
+    Private LayoutRequested As Boolean = False
 
     Private AnchorX As Double = 0
     Private AnchorY As Double = 0
@@ -80,6 +86,7 @@ Public Class AgentMascot
         Panel.SetZIndex(WheelCatcher, -1)
         PanMessageLayer.Children.Add(WheelCatcher)
         AddSway(PanInput, 3.0, 3.0)
+        LayoutTimer.Start()
     End Sub
 
     Private ReadOnly Property MascotWidth As Double
@@ -252,6 +259,16 @@ Public Class AgentMascot
         IsDragging = False
     End Sub
 
+    Private Sub RequestLayout()
+        LayoutRequested = True
+    End Sub
+
+    Private Sub LayoutTimer_Tick(sender As Object, e As EventArgs) Handles LayoutTimer.Tick
+        If LayoutRequested Then
+            LayoutRequested = False
+            LayoutMessages()
+        End If
+    End Sub
     Private Sub SquashMascot(Scale As Double)
         Dim Anim As New DoubleAnimation(Scale, New Duration(TimeSpan.FromMilliseconds(110))) With {
             .EasingFunction = New CubicEase With {.EasingMode = EasingMode.EaseInOut}}
@@ -303,12 +320,28 @@ Public Class AgentMascot
         Dim Host As New StackPanel()
         Dim Viewer As New ScrollViewer With {
             .Content = Host,
-            .VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            .VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             .Background = Brushes.Transparent}
+        Dim Thumb As New Border With {
+            .Width = 4,
+            .CornerRadius = New CornerRadius(2),
+            .Background = New MyColor("#C9CDDB"),
+            .VerticalAlignment = VerticalAlignment.Top,
+            .HorizontalAlignment = HorizontalAlignment.Right,
+            .Visibility = Visibility.Collapsed,
+            .Margin = New Thickness(0, 0, 1, 0)}
+        Dim Track As New Canvas With {.Width = 6, .Background = Brushes.Transparent, .ClipToBounds = True}
+        Track.Children.Add(Thumb)
+        Dim RootGrid As New Grid()
+        RootGrid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = New GridLength(1, GridUnitType.Star)})
+        RootGrid.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
+        RootGrid.Children.Add(Viewer)
+        Grid.SetColumn(Track, 1)
+        RootGrid.Children.Add(Track)
 
         Dim Box As New Border With {
-            .Child = Viewer,
+            .Child = RootGrid,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
             .MaxWidth = 320,
@@ -318,6 +351,25 @@ Public Class AgentMascot
         }
         Dim Entry As New BubbleEntry With {.Box = Box, .Host = Host, .IsUser = IsUser}
         Entry.Viewer = Viewer
+        Entry.Thumb = Thumb
+        Entry.Track = Track
+        AddHandler Viewer.ScrollChanged, Sub(s, args) UpdateScrollBar(Entry)
+        AddHandler Thumb.MouseLeftButtonDown, Sub(s, args)
+                                                   Entry.DragStartY = args.GetPosition(Track).Y
+                                                   Entry.DragStartOffset = Viewer.VerticalOffset
+                                                   Thumb.CaptureMouse()
+                                               End Sub
+        AddHandler Thumb.MouseMove, Sub(s, args)
+                                        If Not Thumb.IsMouseCaptured Then Return
+                                        Dim Range As Double = Math.Max(0, MeasureContent(Entry) - Viewer.ViewportHeight)
+                                        Dim Space As Double = Math.Max(1, Track.ActualHeight - Thumb.ActualHeight)
+                                        Dim Delta As Double = args.GetPosition(Track).Y - Entry.DragStartY
+                                        Dim Target As Double = Entry.DragStartOffset + Delta * Range / Space
+                                        Viewer.ScrollToVerticalOffset(Math.Max(0, Math.Min(Range, Target)))
+                                    End Sub
+        AddHandler Thumb.MouseLeftButtonUp, Sub(s, args)
+                                                 Thumb.ReleaseMouseCapture()
+                                             End Sub
         Entry.Raw.Append(Text)
         AddHandler Box.PreviewMouseWheel, AddressOf OnWheel
         Entries.Add(Entry)
@@ -688,6 +740,26 @@ Public Class AgentMascot
         Canvas.SetTop(WheelCatcher, AreaTop)
     End Sub
 
+    Private Sub UpdateScrollBar(Entry As BubbleEntry)
+        Try
+            If Entry.Thumb Is Nothing OrElse Entry.Track Is Nothing OrElse Entry.Viewer Is Nothing Then Return
+            Dim Content As Double = MeasureContent(Entry)
+            Dim Viewport As Double = Entry.Viewer.ViewportHeight
+            If Viewport <= 0 OrElse Content <= Viewport + 0.5 Then
+                Entry.Thumb.Visibility = Visibility.Collapsed
+                Return
+            End If
+            Entry.Thumb.Visibility = Visibility.Visible
+            Dim TrackHeight As Double = Math.Max(10, Entry.Track.ActualHeight)
+            Dim ThumbHeight As Double = Math.Max(16, TrackHeight * Viewport / Content)
+            Entry.Thumb.Height = ThumbHeight
+            Dim Range As Double = Math.Max(0.1, Content - Viewport)
+            Dim Move As Double = (TrackHeight - ThumbHeight) * Math.Min(1, Entry.Viewer.VerticalOffset / Range)
+            Canvas.SetTop(Entry.Thumb, Math.Max(0, Move))
+            Canvas.SetLeft(Entry.Thumb, 1)
+        Catch
+        End Try
+    End Sub
     Private Shared Function MeasureContent(Entry As BubbleEntry) As Double
         Try
             Entry.Host.Measure(New Size(300, Double.PositiveInfinity))
@@ -711,7 +783,9 @@ Public Class AgentMascot
         Next
         If BestEntry IsNot Nothing AndAlso BestOverflow > 0.5 Then
             Dim Target As Double = BestEntry.TargetOffset - e.Delta / 3.0
-            If e.Delta > 0 AndAlso BestEntry.Viewer.VerticalOffset <= 0.5 AndAlso Target <= 0 Then
+            Dim AtTop As Boolean = BestEntry.Viewer.VerticalOffset <= 0.5
+            Dim AtBottom As Boolean = BestEntry.Viewer.VerticalOffset >= BestOverflow - 0.5
+            If (e.Delta > 0 AndAlso AtTop) OrElse (e.Delta < 0 AndAlso AtBottom) Then
                 '已到顶部，交给隐藏逻辑
             Else
                 BestEntry.TargetOffset = Math.Max(0, Math.Min(BestOverflow, Target))
@@ -811,7 +885,7 @@ Public Class AgentMascot
                            Reply.Raw.Append(Full)
                            Reply.Notes.Clear()
                            RenderEntry(Reply)
-                           LayoutMessages()
+                           RequestLayout()
                        End Sub)
             End Sub,
             Sub(ToolName)
