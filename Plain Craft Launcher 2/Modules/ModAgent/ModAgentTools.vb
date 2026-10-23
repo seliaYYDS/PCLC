@@ -140,6 +140,9 @@ Public Module ModAgentTools
             .Risk = 0,
             .Schema = MoodSchema,
             .Run = Function(Args) SetMascotMood(Args)})
+
+        RegisterExtraTools()
+        ModAgentContent.Register(ToolList)
     End Sub
 
     ''' <summary>把工具定义转成 OpenAI tools 数组。</summary>
@@ -202,6 +205,30 @@ Public Module ModAgentTools
                     Return "访问网页：" & Args("url")?.ToString()
                 Case "read_log"
                     Return "读取启动器日志"
+                Case "search_content"
+                    Return "搜索资源：" & If(Args("query") Is Nothing, "（全部）", Args("query").ToString()) & "（" & If(Args("type") Is Nothing, "mod", Args("type").ToString()) & "）"
+                Case "list_content_versions"
+                    Return "查询项目版本：" & Args("project")?.ToString()
+                Case "install_content"
+                    Return "安装资源文件：" & Args("fileName")?.ToString() & "（" & If(Args("type") Is Nothing, "mod", Args("type").ToString()) & "）"
+                Case "delete_content"
+                    Return "删除资源文件：" & Args("fileName")?.ToString()
+                Case "list_installed_content"
+                    Return "列出已安装资源（" & If(Args("type") Is Nothing, "mod", Args("type").ToString()) & "）"
+                Case "read_file"
+                    Return "读取文件：" & Args("path")?.ToString()
+                Case "write_file"
+                    Return "写入文件：" & Args("path")?.ToString() & "（" & Args("content")?.ToString().Length & " 字符）"
+                Case "list_dir"
+                    Return "列出目录：" & Args("path")?.ToString()
+                Case "run_pwsh"
+                    Return "执行 PowerShell 命令：" & Args("command")?.ToString()
+                Case "select_account"
+                    Return "切换到账号：" & Args("name")?.ToString()
+                Case "add_offline_account"
+                    Return "添加离线账号：" & Args("name")?.ToString()
+                Case "delete_account"
+                    Return "移除账号：" & Args("name")?.ToString()
                 Case "set_mascot_mood"
                     Return "切换小瑟的表情为「" & Args("mood")?.ToString() & "」"
                 Case Else
@@ -303,6 +330,7 @@ Public Module ModAgentTools
         Dim Components As McComponents
         Dim ForgeEntry As DlForgeVersionEntry = Nothing
         Dim NeoEntry As DlNeoForgeListEntry = Nothing
+        Dim FabricApiEntry As ResourceVersion = Nothing
         If Loader = "forge" Then
             ForgeEntry = PickForgeVersion(Version, LoaderVersion)
             If ForgeEntry Is Nothing Then Return "没有找到适用于 Minecraft " & Version & " 的 Forge 版本"
@@ -342,7 +370,24 @@ Public Module ModAgentTools
                 If Chosen Is Nothing Then Chosen = Loaders(0)("version").ToString()
             End If
             If Chosen Is Nothing Then Return "未找到指定的 Fabric 版本：" & LoaderVersion
-            Components = New McComponents(Version, Nothing, Nothing, Nothing, Chosen, Nothing, Nothing, Nothing)
+            Dim WantApi As Boolean = Args("fabricApi") Is Nothing OrElse Args("fabricApi").ToObject(Of Boolean)()
+            If WantApi Then
+                Try
+                    If DlFabricApiLoader.State <> LoadState.Finished Then
+                        DlFabricApiLoader.Start(0)
+                        DlFabricApiLoader.WaitForExit(60000)
+                    End If
+                    If DlFabricApiLoader.State = LoadState.Finished AndAlso DlFabricApiLoader.Output IsNot Nothing Then
+                        For Each Item In DlFabricApiLoader.Output
+                            If Item.GameVersions IsNot Nothing AndAlso Item.GameVersions.Contains(Version) AndAlso Not String.IsNullOrWhiteSpace(Item.Version) Then
+                                If FabricApiEntry Is Nothing OrElse Item.ReleaseType = ResourceVersion.ReleaseTypes.Release Then FabricApiEntry = Item
+                            End If
+                        Next
+                    End If
+                Catch
+                End Try
+            End If
+            Components = New McComponents(Version, Nothing, Nothing, Nothing, Chosen, If(FabricApiEntry Is Nothing, Nothing, FabricApiEntry.Version), Nothing, Nothing)
         ElseIf Loader <> "forge" AndAlso Loader <> "neoforge" Then
             Components = New McComponents(Version, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing)
         End If
@@ -356,7 +401,8 @@ Public Module ModAgentTools
                            .Components = Components,
                            .MinecraftJson = Url,
                            .ForgeEntry = ForgeEntry,
-                           .NeoForgeEntry = NeoEntry
+                           .NeoForgeEntry = NeoEntry,
+                           .FabricApi = FabricApiEntry
                        }
                        Success = McInstallStart(Request)
                    Catch
@@ -447,6 +493,305 @@ Public Module ModAgentTools
         If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
         RunInUi(Sub() McLaunchStart())
         Return "正在启动 " & McInstanceSelected.Name
+    End Function
+
+
+    Private Sub RegisterExtraTools()
+        '文件读取
+        Dim ReadFileSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的路径"}}},
+                {"offset", New JObject From {{"type", "integer"}, {"description", "起始字节/字符偏移，默认 0"}}},
+                {"length", New JObject From {{"type", "integer"}, {"description", "读取字符数，默认 65536"}}}
+            }},
+            {"required", New JArray From {"path"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "read_file",
+            .Description = "读取 .minecraft 目录内的文本文件，可指定偏移与长度",
+            .Risk = 0,
+            .Schema = ReadFileSchema,
+            .Run = Function(Args) ReadTextFile(Args)})
+
+        Dim WriteFileSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的路径"}}},
+                {"content", New JObject From {{"type", "string"}, {"description", "写入内容"}}},
+                {"append", New JObject From {{"type", "boolean"}, {"description", "是否追加，默认覆盖"}}}
+            }},
+            {"required", New JArray From {"path", "content"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "write_file",
+            .Description = "写入 .minecraft 目录内的文本文件（覆盖或追加）",
+            .Risk = 2,
+            .Schema = WriteFileSchema,
+            .Run = Function(Args) WriteTextFile(Args)})
+
+        Dim ListDirSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"path", New JObject From {{"type", "string"}, {"description", "相对于 .minecraft 的目录，默认根目录"}}}
+            }}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "list_dir",
+            .Description = "列出 .minecraft 目录内某个文件夹的文件与子目录",
+            .Risk = 0,
+            .Schema = ListDirSchema,
+            .Run = Function(Args) ListDirectory(Args)})
+
+        Dim PwshSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"command", New JObject From {{"type", "string"}, {"description", "要执行的 PowerShell 命令"}}},
+                {"workdir", New JObject From {{"type", "string"}, {"description", "工作目录，相对于 .minecraft"}}}
+            }},
+            {"required", New JArray From {"command"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "run_pwsh",
+            .Description = "在 .minecraft 目录内执行 PowerShell 命令（高风险，可读写文件）",
+            .Risk = 2,
+            .Schema = PwshSchema,
+            .Run = Function(Args) RunPwsh(Args)})
+
+        ToolList.Add(New AgentTool With {
+            .Name = "list_accounts",
+            .Description = "列出已保存的 Minecraft 账号与当前登录方式",
+            .Risk = 0,
+            .Schema = New JObject From {{"type", "object"}, {"properties", New JObject()}},
+            .Run = Function(Args) ListAccounts()})
+
+        Dim SelectAccountSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"name", New JObject From {{"type", "string"}, {"description", "账号名（微软账号为游戏名，离线账号为用户名）"}}}
+            }},
+            {"required", New JArray From {"name"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "select_account",
+            .Description = "切换当前使用的账号",
+            .Risk = 2,
+            .Schema = SelectAccountSchema,
+            .Run = Function(Args) SelectAccount(Args)})
+
+        Dim AddLegacySchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"name", New JObject From {{"type", "string"}, {"description", "离线用户名"}}}
+            }},
+            {"required", New JArray From {"name"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "add_offline_account",
+            .Description = "添加一个离线账号并切换过去",
+            .Risk = 2,
+            .Schema = AddLegacySchema,
+            .Run = Function(Args) AddLegacyAccount(Args)})
+
+        Dim DeleteAccountSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"name", New JObject From {{"type", "string"}, {"description", "要移除的账号名"}}}
+            }},
+            {"required", New JArray From {"name"}}
+        }
+        ToolList.Add(New AgentTool With {
+            .Name = "delete_account",
+            .Description = "移除已保存的账号",
+            .Risk = 2,
+            .Schema = DeleteAccountSchema,
+            .Run = Function(Args) DeleteAccount(Args)})
+    End Sub
+
+    ' ---- 文件与命令 ----
+
+    Private Function ResolvePath(Relative As String) As String
+        Dim Base As String = IO.Path.GetFullPath(McFolderSelected)
+        Dim Target As String = IO.Path.GetFullPath(IO.Path.Combine(Base, If(Relative, "")))
+        If Not Target.StartsWith(Base, StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Return Target
+    End Function
+
+    Private Function ListDirectory(Args As JObject) As String
+        Dim Relative As String = If(Args("path") Is Nothing, "", Args("path").ToString())
+        Dim Target As String = ResolvePath(Relative)
+        If Target Is Nothing Then Return "路径超出 .minecraft 目录"
+        If Not IO.Directory.Exists(Target) Then Return "目录不存在：" & Relative
+        Dim Builder As New Text.StringBuilder()
+        For Each Folder In IO.Directory.GetDirectories(Target)
+            Builder.AppendLine("[目录] " & IO.Path.GetFileName(Folder))
+        Next
+        For Each File In IO.Directory.GetFiles(Target)
+            Builder.AppendLine("[文件] " & IO.Path.GetFileName(File) & "  " & New IO.FileInfo(File).Length & " B")
+        Next
+        Dim Result As String = Builder.ToString()
+        If Result.Length = 0 Then Return "（空目录）"
+        If Result.Length > 20000 Then Result = Result.Substring(0, 20000) & "…（已截断）"
+        Return Result
+    End Function
+
+    Private Function ReadTextFile(Args As JObject) As String
+        Dim Relative As String = Args("path")?.ToString()
+        If String.IsNullOrWhiteSpace(Relative) Then Return "缺少 path 参数"
+        Dim Target As String = ResolvePath(Relative)
+        If Target Is Nothing Then Return "路径超出 .minecraft 目录"
+        If Not IO.File.Exists(Target) Then Return "文件不存在：" & Relative
+        Dim Offset As Integer = If(Args("offset") Is Nothing, 0, Math.Max(0, Args("offset").ToObject(Of Integer)()))
+        Dim Length As Integer = If(Args("length") Is Nothing, 65536, Math.Max(1, Args("length").ToObject(Of Integer)()))
+        Length = Math.Min(Length, 400000)
+        Dim Text As String = IO.File.ReadAllText(Target, System.Text.Encoding.UTF8)
+        If Offset >= Text.Length Then Return "（偏移超出文件末尾，文件共 " & Text.Length & " 字符）"
+        Dim Take As Integer = Math.Min(Length, Text.Length - Offset)
+        Dim Body As String = Text.Substring(Offset, Take)
+        Dim Tail As String = If(Offset + Take < Text.Length, vbCrLf & "…（未完，下次 offset=" & (Offset + Take) & "）", "")
+        Return Body & Tail
+    End Function
+
+    Private Function WriteTextFile(Args As JObject) As String
+        Dim Relative As String = Args("path")?.ToString()
+        If String.IsNullOrWhiteSpace(Relative) Then Return "缺少 path 参数"
+        Dim Target As String = ResolvePath(Relative)
+        If Target Is Nothing Then Return "路径超出 .minecraft 目录"
+        Dim Content As String = If(Args("content") Is Nothing, "", Args("content").ToString())
+        Dim Append As Boolean = Args("append") IsNot Nothing AndAlso Args("append").ToObject(Of Boolean)()
+        IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(Target))
+        If Append Then
+            IO.File.AppendAllText(Target, Content, System.Text.Encoding.UTF8)
+        Else
+            IO.File.WriteAllText(Target, Content, System.Text.Encoding.UTF8)
+        End If
+        Return "已写入 " & Relative & "（" & Content.Length & " 字符）"
+    End Function
+
+    Private Function RunPwsh(Args As JObject) As String
+        Dim Command As String = Args("command")?.ToString()
+        If String.IsNullOrWhiteSpace(Command) Then Return "缺少 command 参数"
+        Dim Relative As String = If(Args("workdir") Is Nothing, "", Args("workdir").ToString())
+        Dim WorkDir As String = ResolvePath(Relative)
+        If WorkDir Is Nothing Then Return "工作目录超出 .minecraft 目录"
+        If Not IO.Directory.Exists(WorkDir) Then WorkDir = McFolderSelected
+        Try
+            Dim Info As New Diagnostics.ProcessStartInfo("pwsh", "-NoProfile -NonInteractive -Command " & Command) With {
+                .WorkingDirectory = WorkDir,
+                .RedirectStandardOutput = True,
+                .RedirectStandardError = True,
+                .UseShellExecute = False,
+                .CreateNoWindow = True}
+            Using Proc = Diagnostics.Process.Start(Info)
+                Dim Output As String = Proc.StandardOutput.ReadToEnd()
+                Dim Err As String = Proc.StandardError.ReadToEnd()
+                Proc.WaitForExit(60000)
+                Dim Result As String = Output
+                If Err.Length > 0 Then Result &= vbCrLf & "[stderr]" & vbCrLf & Err
+                If Result.Length > 20000 Then Result = Result.Substring(Result.Length - 20000)
+                Return Result
+            End Using
+        Catch ex As Exception
+            Return "执行失败：" & ex.Message
+        End Try
+    End Function
+
+    ' ---- 账号 ----
+
+    Private Function ListAccounts() As String
+        Try
+            Dim Result As New JObject()
+            Result("currentType") = Settings.Get(Of McLoginType)("LoginType").ToString()
+            Result("currentName") = McLoginName()
+            Dim Ms As New JArray()
+            Try
+                Dim MsJson As JObject = Settings.Get(Of String)("LoginMsJson").DeserializeJson()
+                If MsJson IsNot Nothing Then
+                    For Each Item In MsJson.Properties
+                        Ms.Add(Item.Name)
+                    Next
+                End If
+            Catch
+            End Try
+            Result("microsoft") = Ms
+            Dim Legacy As New JArray()
+            Dim LegacyRaw As String = Settings.Get(Of String)("LoginLegacyName")
+            If Not String.IsNullOrWhiteSpace(LegacyRaw) Then
+                For Each Item In LegacyRaw.Split("¨"c)
+                    If Item.Trim().Length > 0 Then Legacy.Add(Item.Trim())
+                Next
+            End If
+            Result("offline") = Legacy
+            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "读取账号失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function SelectAccount(Args As JObject) As String
+        Dim Name As String = Args("name")?.ToString()
+        If String.IsNullOrWhiteSpace(Name) Then Return "缺少 name 参数"
+        Name = Name.Trim()
+        Try
+            Dim MsJson As JObject = Settings.Get(Of String)("LoginMsJson").DeserializeJson()
+            If MsJson IsNot Nothing AndAlso MsJson(Name) IsNot Nothing Then
+                Settings.Set("LoginType", CInt(McLoginType.Ms))
+                Settings.Set("CacheMsV2Name", Name)
+                Settings.Set("CacheMsV2OAuthRefresh", MsJson(Name).ToString())
+                Return "已切换到微软账号 " & Name
+            End If
+            Dim LegacyRaw As String = Settings.Get(Of String)("LoginLegacyName")
+            Dim Names As New List(Of String)
+            If Not String.IsNullOrWhiteSpace(LegacyRaw) Then Names.AddRange(LegacyRaw.Split("¨"c))
+            Dim Hit As String = Names.FirstOrDefault(Function(X) String.Equals(X.Trim(), Name, StringComparison.OrdinalIgnoreCase))
+            If Hit Is Nothing Then Return "没有找到账号：" & Name
+            Names.Remove(Hit)
+            Names.Insert(0, Hit)
+            Settings.Set("LoginLegacyName", String.Join("¨", Names))
+            Settings.Set("LoginType", CInt(McLoginType.Legacy))
+            Return "已切换到离线账号 " & Name
+        Catch ex As Exception
+            Return "切换账号失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function AddLegacyAccount(Args As JObject) As String
+        Dim Name As String = Args("name")?.ToString()
+        If String.IsNullOrWhiteSpace(Name) Then Return "缺少 name 参数"
+        Name = Name.Trim()
+        If Name.Contains("¨") Then Return "账号名不能包含特殊分隔符"
+        Dim LegacyRaw As String = Settings.Get(Of String)("LoginLegacyName")
+        Dim Names As New List(Of String)
+        If Not String.IsNullOrWhiteSpace(LegacyRaw) Then Names.AddRange(LegacyRaw.Split("¨"c))
+        Names.RemoveAll(Function(X) String.Equals(X.Trim(), Name, StringComparison.OrdinalIgnoreCase))
+        Names.Insert(0, Name)
+        Settings.Set("LoginLegacyName", String.Join("¨", Names))
+        Settings.Set("LoginType", CInt(McLoginType.Legacy))
+        Return "已添加并切换到离线账号 " & Name
+    End Function
+
+    Private Function DeleteAccount(Args As JObject) As String
+        Dim Name As String = Args("name")?.ToString()
+        If String.IsNullOrWhiteSpace(Name) Then Return "缺少 name 参数"
+        Name = Name.Trim()
+        Try
+            Dim MsJson As JObject = Settings.Get(Of String)("LoginMsJson").DeserializeJson()
+            If MsJson IsNot Nothing AndAlso MsJson(Name) IsNot Nothing Then
+                MsJson.Remove(Name)
+                Settings.Set("LoginMsJson", MsJson.ToString(Newtonsoft.Json.Formatting.None))
+                Return "已移除微软账号 " & Name
+            End If
+            Dim LegacyRaw As String = Settings.Get(Of String)("LoginLegacyName")
+            If String.IsNullOrWhiteSpace(LegacyRaw) Then Return "没有找到账号：" & Name
+            Dim Names As New List(Of String)
+            Names.AddRange(LegacyRaw.Split("¨"c))
+            Dim Removed As Integer = Names.RemoveAll(Function(X) String.Equals(X.Trim(), Name, StringComparison.OrdinalIgnoreCase))
+            If Removed = 0 Then Return "没有找到账号：" & Name
+            Settings.Set("LoginLegacyName", String.Join("¨", Names))
+            Return "已移除离线账号 " & Name
+        Catch ex As Exception
+            Return "移除账号失败：" & ex.Message
+        End Try
     End Function
 
 End Module

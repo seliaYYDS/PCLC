@@ -1,0 +1,281 @@
+Imports System.Net
+Imports System.Text
+Imports Newtonsoft.Json.Linq
+
+''' <summary>AI 助理的社区资源工具：搜索、安装、删除（基于 Modrinth 开放接口）。</summary>
+Public Module ModAgentContent
+
+    Private Const ModrinthApi As String = "https://api.modrinth.com/v2/"
+    Private Const UserAgent As String = "PCLC/2.14 (AI Assistant; +https://github.com/Meloong-Git/PCL)"
+
+    Public Sub Register(List As List(Of AgentTool))
+        '搜索
+        Dim SearchSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"query", New JObject From {{"type", "string"}, {"description", "搜索关键词，可为空"}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack/modpack，默认 mod"}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本，如 1.20.1"}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器：fabric/forge/neoforge/quilt，仅对 mod 有效"}}},
+                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10，最多 30"}}}
+            }}
+        }
+        List.Add(New AgentTool With {
+            .Name = "search_content",
+            .Description = "搜索 Mod、资源包、光影包、数据包、整合包（来源：Modrinth）",
+            .Risk = 0,
+            .Schema = SearchSchema,
+            .Run = Function(Args) SearchContent(Args)})
+
+        Dim VersionsSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"project", New JObject From {{"type", "string"}, {"description", "项目 slug 或 ID"}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "筛选 Minecraft 版本"}}},
+                {"loader", New JObject From {{"type", "string"}, {"description", "筛选加载器"}}},
+                {"limit", New JObject From {{"type", "integer"}, {"description", "返回数量，默认 10"}}}
+            }},
+            {"required", New JArray From {"project"}}
+        }
+        List.Add(New AgentTool With {
+            .Name = "list_content_versions",
+            .Description = "列出某个项目可下载的版本，用于挑选后再安装",
+            .Risk = 0,
+            .Schema = VersionsSchema,
+            .Run = Function(Args) ListVersions(Args)})
+
+        Dim InstallSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"url", New JObject From {{"type", "string"}, {"description", "文件下载地址（来自 list_content_versions）"}}},
+                {"fileName", New JObject From {{"type", "string"}, {"description", "保存的文件名，需带扩展名"}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "资源类型：mod/resourcepack/shader/datapack，默认 mod"}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "数据包安装到的存档名，仅 datapack 需要"}}}
+            }},
+            {"required", New JArray From {"url", "fileName"}}
+        }
+        List.Add(New AgentTool With {
+            .Name = "install_content",
+            .Description = "把资源文件下载并安装到当前版本的对应目录（自动考虑版本隔离）",
+            .Risk = 2,
+            .Schema = InstallSchema,
+            .Run = Function(Args) InstallContent(Args)})
+
+        Dim DeleteSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"fileName", New JObject From {{"type", "string"}, {"description", "要删除的文件名"}}},
+                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}}
+            }},
+            {"required", New JArray From {"fileName"}}
+        }
+        List.Add(New AgentTool With {
+            .Name = "delete_content",
+            .Description = "删除当前版本目录下的资源文件",
+            .Risk = 2,
+            .Schema = DeleteSchema,
+            .Run = Function(Args) DeleteContent(Args)})
+
+        Dim ListInstalledSchema As New JObject From {
+            {"type", "object"},
+            {"properties", New JObject From {
+                {"type", New JObject From {{"type", "string"}, {"description", "资源类型，默认 mod"}}},
+                {"world", New JObject From {{"type", "string"}, {"description", "存档名，仅 datapack 需要"}}}
+            }}
+        }
+        List.Add(New AgentTool With {
+            .Name = "list_installed_content",
+            .Description = "列出当前版本目录下已安装的资源文件",
+            .Risk = 0,
+            .Schema = ListInstalledSchema,
+            .Run = Function(Args) ListInstalled(Args)})
+    End Sub
+
+    ' ---- 目录 ----
+
+    Private Function ContentFolder(Type As String, World As String) As String
+        Dim Base As String = McFolderSelected
+        Dim Instance = McInstanceSelected
+        If Instance IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(Instance.PathIndie) Then Base = Instance.PathIndie
+        Select Case Type.ToLower()
+            Case "mod" : Return IO.Path.Combine(Base, "mods")
+            Case "resourcepack" : Return IO.Path.Combine(Base, "resourcepacks")
+            Case "shader" : Return IO.Path.Combine(Base, "shaderpacks")
+            Case "datapack"
+                If String.IsNullOrWhiteSpace(World) Then Return Nothing
+                Return IO.Path.Combine(Base, "saves", World, "datapacks")
+            Case Else : Return Nothing
+        End Select
+    End Function
+
+    ' ---- 网络 ----
+
+    Private Function GetJson(Url As String) As JToken
+        Dim Request As HttpWebRequest = CType(WebRequest.Create(Url), HttpWebRequest)
+        Request.UserAgent = UserAgent
+        Request.Accept = "application/json"
+        Request.Timeout = 20000
+        Request.ReadWriteTimeout = 20000
+        Using Response = CType(Request.GetResponse(), HttpWebResponse)
+            Using Reader As New IO.StreamReader(Response.GetResponseStream(), Encoding.UTF8)
+                Return JToken.Parse(Reader.ReadToEnd())
+            End Using
+        End Using
+    End Function
+
+    Private Function TypeToProjectType(Type As String) As String
+        Select Case Type.ToLower()
+            Case "shader" : Return "shader"
+            Case "resourcepack" : Return "resourcepack"
+            Case "datapack" : Return "datapack"
+            Case "modpack" : Return "modpack"
+            Case Else : Return "mod"
+        End Select
+    End Function
+
+    ' ---- 搜索 ----
+
+    Private Function SearchContent(Args As JObject) As String
+        Try
+            Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
+            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+
+            Dim Facets As New JArray()
+            Facets.Add(New JArray From {"project_type:" & TypeToProjectType(Type)})
+            If GameVersion <> "" Then Facets.Add(New JArray From {"versions:" & GameVersion})
+            If Loader <> "" AndAlso TypeToProjectType(Type) = "mod" Then Facets.Add(New JArray From {"categories:" & Loader.ToLower()})
+
+            Dim Url As String = ModrinthApi & "search?limit=" & Limit & "&index=relevance" &
+                                "&query=" & Uri.EscapeDataString(Query) &
+                                "&facets=" & Uri.EscapeDataString(Facets.ToString(Newtonsoft.Json.Formatting.None))
+            Dim Json As JToken = GetJson(Url)
+            Dim Hits As JArray = TryCast(Json("hits"), JArray)
+            If Hits Is Nothing Then Return "搜索失败：返回格式异常"
+            Dim Result As New JArray()
+            For Each Hit In Hits
+                Result.Add(New JObject From {
+                    {"slug", Hit("slug")?.ToString()},
+                    {"title", Hit("title")?.ToString()},
+                    {"description", Hit("description")?.ToString()},
+                    {"downloads", Hit("downloads")},
+                    {"author", Hit("author")?.ToString()},
+                    {"versions", Hit("versions")}
+                })
+            Next
+            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "搜索失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ListVersions(Args As JObject) As String
+        Try
+            Dim Project As String = Args("project")?.ToString()
+            If String.IsNullOrWhiteSpace(Project) Then Return "缺少 project 参数"
+            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
+            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+
+            Dim Url As String = ModrinthApi & "project/" & Uri.EscapeDataString(Project) & "/version"
+            Dim Query As New List(Of String)
+            If GameVersion <> "" Then Query.Add("game_versions=" & Uri.EscapeDataString("[""" & GameVersion & """]"))
+            If Loader <> "" Then Query.Add("loaders=" & Uri.EscapeDataString("[""" & Loader.ToLower() & """]"))
+            If Query.Count > 0 Then Url &= "?" & String.Join("&", Query)
+
+            Dim Arr As JArray = TryCast(GetJson(Url), JArray)
+            If Arr Is Nothing Then Return "获取版本失败"
+            Dim Result As New JArray()
+            For Each Item In Arr
+                If Result.Count >= Limit Then Exit For
+                Dim Files As JArray = TryCast(Item("files"), JArray)
+                If Files Is Nothing OrElse Files.Count = 0 Then Continue For
+                Dim Primary = Files(0)
+                Result.Add(New JObject From {
+                    {"version", Item("version_number")?.ToString()},
+                    {"name", Item("name")?.ToString()},
+                    {"gameVersions", Item("game_versions")},
+                    {"loaders", Item("loaders")},
+                    {"url", Primary("url")?.ToString()},
+                    {"fileName", Primary("filename")?.ToString()}
+                })
+            Next
+            Return Result.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "获取版本失败：" & ex.Message
+        End Try
+    End Function
+
+    ' ---- 安装 ----
+
+    Private Function InstallContent(Args As JObject) As String
+        Try
+            Dim Url As String = Args("url")?.ToString()
+            Dim FileName As String = Args("fileName")?.ToString()
+            If String.IsNullOrWhiteSpace(Url) OrElse String.IsNullOrWhiteSpace(FileName) Then Return "缺少 url 或 fileName 参数"
+            If IO.Path.GetFileName(FileName) <> FileName Then Return "fileName 不能包含路径"
+            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
+            Dim Folder As String = ContentFolder(Type, World)
+            If Folder Is Nothing Then Return "datapack 需要提供 world 参数" & If(Type.ToLower() = "datapack", "", "，或资源类型不受支持")
+            IO.Directory.CreateDirectory(Folder)
+            Dim Target As String = IO.Path.Combine(Folder, FileName)
+            If IO.File.Exists(Target) Then Return "文件已存在：" & FileName
+
+            Dim Request As HttpWebRequest = CType(WebRequest.Create(Url), HttpWebRequest)
+            Request.UserAgent = UserAgent
+            Request.Timeout = 60000
+            Using Response = CType(Request.GetResponse(), HttpWebResponse)
+                Using Input = Response.GetResponseStream()
+                    Using Output = IO.File.Create(Target)
+                        Input.CopyTo(Output)
+                    End Using
+                End Using
+            End Using
+            Return "已安装到 " & Target & "（" & New IO.FileInfo(Target).Length & " 字节）"
+        Catch ex As Exception
+            Return "安装失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function DeleteContent(Args As JObject) As String
+        Try
+            Dim FileName As String = Args("fileName")?.ToString()
+            If String.IsNullOrWhiteSpace(FileName) Then Return "缺少 fileName 参数"
+            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
+            Dim Folder As String = ContentFolder(Type, World)
+            If Folder Is Nothing Then Return "无法确定目标目录"
+            Dim Target As String = IO.Path.Combine(Folder, IO.Path.GetFileName(FileName))
+            If Not IO.File.Exists(Target) Then Return "文件不存在：" & FileName
+            IO.File.Delete(Target)
+            Return "已删除 " & FileName
+        Catch ex As Exception
+            Return "删除失败：" & ex.Message
+        End Try
+    End Function
+
+    Private Function ListInstalled(Args As JObject) As String
+        Try
+            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+            Dim World As String = If(Args("world") Is Nothing, "", Args("world").ToString())
+            Dim Folder As String = ContentFolder(Type, World)
+            If Folder Is Nothing Then Return "无法确定目标目录"
+            If Not IO.Directory.Exists(Folder) Then Return "目录不存在：" & Folder
+            Dim Items As New JArray()
+            For Each File In IO.Directory.GetFiles(Folder)
+                Items.Add(New JObject From {
+                    {"name", IO.Path.GetFileName(File)},
+                    {"size", New IO.FileInfo(File).Length}
+                })
+            Next
+            Return Items.ToString(Newtonsoft.Json.Formatting.Indented)
+        Catch ex As Exception
+            Return "列出失败：" & ex.Message
+        End Try
+    End Function
+
+End Module
