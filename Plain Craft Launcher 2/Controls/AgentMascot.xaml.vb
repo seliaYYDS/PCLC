@@ -858,6 +858,7 @@ Public Class AgentMascot
             Box.Visibility = Visibility.Visible
             '内容高度与视口
             Dim ContentHeight As Double = MeasureContent(Entry)
+            If Entry.Viewer IsNot Nothing AndAlso Entry.Viewer.ExtentHeight > 0 Then ContentHeight = Entry.Viewer.ExtentHeight
             Entry.NeedScroll = ContentHeight > LongMax - 18
             If Entry.NeedScroll Then
                 Box.Height = LongMax
@@ -895,11 +896,7 @@ Public Class AgentMascot
     Private Sub UpdateScrollBar(Entry As BubbleEntry)
         Try
             If Entry.Thumb Is Nothing OrElse Entry.Track Is Nothing OrElse Entry.Viewer Is Nothing Then Return
-            If Entry.DirtyContent Then
-                Entry.ContentCache = MeasureContent(Entry)
-                Entry.DirtyContent = False
-            End If
-            Dim Content As Double = Entry.ContentCache
+            Dim Content As Double = Entry.Viewer.ExtentHeight
             Dim Viewport As Double = Entry.Viewer.ViewportHeight
             If Viewport <= 0 OrElse Content <= Viewport + 1 Then
                 Entry.Thumb.Visibility = Visibility.Collapsed
@@ -918,7 +915,9 @@ Public Class AgentMascot
     End Sub
     Private Shared Function MeasureContent(Entry As BubbleEntry) As Double
         Try
-            Entry.Host.Measure(New Size(300, Double.PositiveInfinity))
+            Dim Width As Double = 340
+            If Entry.Viewer IsNot Nothing AndAlso Entry.Viewer.ActualWidth > 40 Then Width = Entry.Viewer.ActualWidth - 2
+            Entry.Host.Measure(New Size(Width, Double.PositiveInfinity))
             Return Entry.Host.DesiredSize.Height
         Catch
             Return 0
