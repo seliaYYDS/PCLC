@@ -412,11 +412,12 @@ Public Class AgentMascot
             Return
         End If
         If Entry.Raw.Length = 0 Then
-            If Not Entry.ShowingThinking Then
-                Entry.Host.Children.Clear()
-                Entry.Host.Children.Add(BuildHintText("思考中…", 12))
-                Entry.ShowingThinking = True
-            End If
+            Entry.Host.Children.Clear()
+            Entry.Host.Children.Add(BuildHintText("思考中…", 12))
+            For Each Note In Entry.Notes
+                Entry.Host.Children.Add(BuildHintText(Note, 11))
+            Next
+            Entry.ShowingThinking = True
             Return
         End If
         If Entry.ShowingThinking Then

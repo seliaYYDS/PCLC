@@ -291,7 +291,26 @@ Public Module ModAgentTools
                     Names.Add(Entry)
                 Next
             Next
-            If Names.Count = 0 Then Return "当前没有已安装的版本"
+            '列表可能尚未加载，直接扫描 versions 目录兜底
+            If Names.Count = 0 Then
+                Dim Folder As String = McFolderSelected & "versions\"
+                If Not IO.Directory.Exists(Folder) Then Return "没有找到版本目录：" & Folder
+                For Each SubFolder In IO.Directory.GetDirectories(Folder)
+                    Dim JsonPath As String = IO.Path.Combine(SubFolder, IO.Path.GetFileName(SubFolder) & ".json")
+                    Dim Info As String = ""
+                    If IO.File.Exists(JsonPath) Then
+                        Try
+                            Dim Json As JObject = JObject.Parse(IO.File.ReadAllText(JsonPath, System.Text.Encoding.UTF8))
+                            Info = If(Json("id")?.ToString(), "")
+                        Catch
+                        End Try
+                    End If
+                    Dim Entry As New JObject From {{"name", IO.Path.GetFileName(SubFolder)}, {"info", Info}}
+                    Names.Add(Entry)
+                Next
+            End If
+            Logger.Info($"[AgentListInstances] count={Names.Count} folder={McFolderSelected}")
+            If Names.Count = 0 Then Return "当前没有已安装的版本（版本目录：" & McFolderSelected & "versions\）"
             Return Names.ToString(Newtonsoft.Json.Formatting.None)
         Catch ex As Exception
             Return "读取版本列表失败：" & ex.Message
