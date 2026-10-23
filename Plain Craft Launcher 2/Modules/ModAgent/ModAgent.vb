@@ -81,7 +81,7 @@ Public Class ModAgent
         ModAgentLlm.Cancel()
     End Sub
     ''' <summary>发送用户消息并跑完工具循环；回调在调用线程触发。</summary>
-    Public Sub Send(UserText As String, OnText As Action(Of String), OnTool As Action(Of String), OnDone As Action, OnFail As Action(Of String))
+    Public Sub Send(UserText As String, OnText As Action(Of String), OnTool As Action(Of String), OnDone As Action, OnFail As Action(Of String), Optional OnToolResult As Action(Of String, Boolean) = Nothing)
         EnsureInit()
         If IsWaiting Then
             OnFail("上一个请求还在进行中")
@@ -125,6 +125,7 @@ Public Class ModAgent
                             OnTool(ModAgentTools.DescribeAction(Name, Preview, ArgsText))
                         End If
                         Dim Result As String = RunTool(Name, ArgsText)
+                        If OnToolResult IsNot Nothing Then OnToolResult(Name, LooksLikeToolFailure(Result))
                         SyncLock Sync
                             Raw.Add(New JObject From {
                                 {"role", "tool"},
@@ -156,6 +157,14 @@ Public Class ModAgent
         End Try
     End Sub
 
+    ''' <summary>粗略判断工具返回值是否代表失败。</summary>
+    Private Shared Function LooksLikeToolFailure(Result As String) As Boolean
+        If String.IsNullOrWhiteSpace(Result) Then Return True
+        For Each Marker In {"失败", "没有找到", "未知工具", "用户拒绝", "缺少 ", "超出", "不存在", "未找到", "无法确定"}
+            If Result.Contains(Marker) Then Return True
+        Next
+        Return False
+    End Function
     '按安全策略判断是否需要确认
     Private Function NeedsConfirm(Tool As AgentTool) As Boolean
         Dim Policy As Integer = Settings.Get(Of Integer)("AgentSafety")

@@ -415,7 +415,11 @@ Public Class AgentMascot
             Entry.Host.Children.Clear()
             Entry.Host.Children.Add(BuildHintText("思考中…", 12))
             For Each Note In Entry.Notes
-                Entry.Host.Children.Add(BuildHintText(Note, 11))
+                If Note.StartsWith(ChrW(1)) Then
+                    Entry.Host.Children.Add(BuildErrorHint(Note.Substring(1), 11))
+                Else
+                    Entry.Host.Children.Add(BuildHintText(Note, 11))
+                End If
             Next
             Entry.ShowingThinking = True
             Return
@@ -456,7 +460,11 @@ Public Class AgentMascot
         Next
         Entry.DirtyContent = True
         For Each Note In Entry.Notes
-            Entry.Host.Children.Add(BuildHintText(Note, 11))
+            If Note.StartsWith(ChrW(1)) Then
+                Entry.Host.Children.Add(BuildErrorHint(Note.Substring(1), 11))
+            Else
+                Entry.Host.Children.Add(BuildHintText(Note, 11))
+            End If
         Next
     End Sub
 
@@ -742,6 +750,14 @@ Public Class AgentMascot
                 .Foreground = New MyColor(60, 64, 80)}}
     End Function
 
+    Private Shared Function BuildErrorHint(Text As String, Size As Double) As TextBlock
+        Return New TextBlock With {
+            .Text = Text,
+            .FontSize = Size,
+            .Foreground = New MyColor(214, 74, 74),
+            .Margin = New Thickness(0, 2, 0, 0),
+            .TextWrapping = TextWrapping.Wrap}
+    End Function
     Private Shared Function BuildHintText(Text As String, Size As Double) As TextBlock
         Dim Block As New TextBlock With {
             .Text = Text,
@@ -1056,7 +1072,6 @@ Public Class AgentMascot
                 RunInUi(Sub()
                            SetBusy(False)
                            Reply.Notes.Clear()
-                           '结束时整块重建一次，保证与重新打开时的渲染一致
                            Reply.Host.Children.Clear()
                            RenderEntry(Reply)
                            LayoutMessages()
@@ -1072,6 +1087,22 @@ Public Class AgentMascot
                            End If
                            RenderEntry(Reply)
                            LayoutMessages()
+                       End Sub)
+            End Sub,
+            Sub(ToolName, Failed)
+                RunInUi(Sub()
+                           Try
+                               If Failed AndAlso Reply.Notes.Count > 0 Then
+                                   Dim Last As String = Reply.Notes(Reply.Notes.Count - 1)
+                                   If Not Last.StartsWith(ChrW(1)) Then
+                                       Reply.Notes(Reply.Notes.Count - 1) = ChrW(1) & Last
+                                   End If
+                               End If
+                               RenderEntry(Reply)
+                               LayoutMessages()
+                           Catch ex As Exception
+                               Logger.Warn(ex, "AI 工具结果渲染失败")
+                           End Try
                        End Sub)
             End Sub)
     End Sub
