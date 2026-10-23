@@ -138,6 +138,15 @@ Public Module ModAgentContent
             .Run = Function(Args) ListInstalled(Args)})
     End Sub
 
+    Private Function ModKindName(Type As String) As String
+        Select Case Type.ToLower()
+            Case "resourcepack" : Return "资源包"
+            Case "shader" : Return "光影包"
+            Case "datapack" : Return "数据包"
+            Case "modpack" : Return "整合包"
+            Case Else : Return "模组"
+        End Select
+    End Function
     ' ---- 目录 ----
 
     Private Function FindInstance(Name As String) As McInstance
@@ -396,6 +405,7 @@ Public Module ModAgentContent
             If IO.File.Exists(Target) Then Return "文件已存在：" & FileName
 
             DownloadFile(Url, Target)
+            ModAgentChanges.Added(ModKindName(Type), FileName)
             Return "已安装到 " & Target & "（" & New IO.FileInfo(Target).Length & " 字节）"
         Catch ex As Exception
             Return "安装失败：" & ex.Message
@@ -432,6 +442,7 @@ Public Module ModAgentContent
             Loader.Start(McFolderSelected & "versions\" & Name & "")
             LoaderTaskbarAdd(Loader)
             RunInUi(Sub() FrmMain.PageChange(FormMain.PageType.TaskManager))
+            ModAgentChanges.Added("整合包", Name)
             Return "已开始安装整合包 " & Name & "，可在任务管理器中查看进度"
         Catch ex As Exception
             Return "整合包安装失败：" & ex.Message
@@ -550,6 +561,7 @@ Public Module ModAgentContent
                         Failed.Add(New JObject From {{"project", Slug}, {"reason", "下载失败：" & ex.Message}})
                         Continue While
                     End Try
+                    ModAgentChanges.Added(ModKindName(TypeName), FileName)
                 End If
                 If WithDeps Then
                     For Each Dep In CType(If(Version("dependencies"), New JArray()), JArray)
@@ -582,6 +594,7 @@ Public Module ModAgentContent
             Dim Target As String = IO.Path.Combine(Folder, IO.Path.GetFileName(FileName))
             If Not IO.File.Exists(Target) Then Return "文件不存在：" & FileName
             IO.File.Delete(Target)
+            ModAgentChanges.Removed(ModKindName(Type), FileName)
             Return "已删除 " & FileName
         Catch ex As Exception
             Return "删除失败：" & ex.Message

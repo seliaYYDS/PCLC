@@ -209,6 +209,7 @@
     <Compile Include="Modules\ModAgent\ModAgentProviders.vb" />
     <Compile Include="Modules\ModAgent\ModAgentTools.vb" />
     <Compile Include="Modules\ModAgent\ModAgentContent.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentChanges.vb" />
     <Compile Include="Modules\ModAgent\ModAgentWeb.vb" />
     <Compile Include="Modules\ModAgent\ModAgentLlm.vb" />
     <Compile Include="Modules\ModAgent\ModAgent.vb" />

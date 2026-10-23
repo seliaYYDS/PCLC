@@ -476,7 +476,10 @@ Public Module ModAgentTools
                    End Try
                End Sub)
         Done.WaitOne(20000)
-        If Success Then Return "已开始安装 " & Name & "，可在任务列表查看进度"
+        If Success Then
+            ModAgentChanges.Added("版本", Name)
+            Return "已开始安装 " & Name & "，可在任务列表查看进度"
+        End If
         Return "启动安装失败。可能原因：版本列表获取失败、磁盘空间不足或网络异常；" &
                "可以让用户稍后重试，或在 设置 → 启动器 → 日志 中查看具体错误。"
     End Function
@@ -568,7 +571,10 @@ Public Module ModAgentTools
                    End Try
                End Sub)
         Done.WaitOne(20000)
-        If Success Then Return "已开始为 " & Target.Name & " 安装 " & Loader & "，可在任务管理器查看进度"
+        If Success Then
+            ModAgentChanges.Added("加载器", Loader)
+            Return "已开始为 " & Target.Name & " 安装 " & Loader & "，可在任务管理器查看进度"
+        End If
         Return "启动修改失败，请查看日志或在下载页手动修改"
     End Function
     Private LastInstallError As String = ""
@@ -730,6 +736,7 @@ Public Module ModAgentTools
                    LoaderFolderRun(McInstanceListLoader, McFolderSelected, LoaderFolderRunType.ForceRun, MaxDepth:=1, ExtraPath:="versions\")
                    FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.Launch})
                End Sub)
+        ModAgentChanges.Removed("版本", Name)
         Return "已删除版本 " & Name & "（已放入回收站）"
     End Function
     Private Function LaunchGame() As String
@@ -908,6 +915,7 @@ Public Module ModAgentTools
         Else
             IO.File.WriteAllText(Target, Content, System.Text.Encoding.UTF8)
         End If
+        ModAgentChanges.Added("本地文件", IO.Path.GetFileName(Relative))
         Return "已写入 " & Relative & "（" & Content.Length & " 字符）"
     End Function
 

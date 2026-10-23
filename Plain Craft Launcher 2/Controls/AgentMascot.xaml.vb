@@ -112,6 +112,12 @@ Public Class AgentMascot
         LayoutTimer.Start()
     End Sub
 
+    Private ReadOnly Property ColumnWidth As Double
+        Get
+            If PanInput IsNot Nothing AndAlso PanInput.ActualWidth > 0 Then Return PanInput.ActualWidth
+            Return 380
+        End Get
+    End Property
     Private ReadOnly Property MascotWidth As Double
         Get
             If ImgMascot IsNot Nothing AndAlso ImgMascot.ActualWidth > 0 Then Return ImgMascot.ActualWidth
@@ -369,7 +375,7 @@ Public Class AgentMascot
             .Child = RootGrid,
             .CornerRadius = New CornerRadius(8),
             .Padding = New Thickness(10, 7, 10, 7),
-            .MaxWidth = 320,
+            .MaxWidth = ColumnWidth,
             .Background = New MyColor(If(IsUser, "#E8EAFF", "#FFFFFF")),
             .BorderBrush = New MyColor(If(IsUser, "#D6DAFF", "#D8DCE8")),
             .BorderThickness = New Thickness(1)
@@ -513,6 +519,10 @@ Public Class AgentMascot
             If String.IsNullOrWhiteSpace(Line) Then Continue While
             Dim Trimmed As String = Line.TrimStart()
             Dim Indent As Integer = Line.Length - Trimmed.Length
+            If Trimmed = ChrW(30) Then
+                Result.Add(New AgentBlock With {.Kind = 5, .Text = ""})
+                Continue While
+            End If
             If Trimmed.StartsWith("|") Then
                 Dim Rows As New List(Of String)
                 Rows.Add(Trimmed.TrimEnd())
@@ -856,11 +866,11 @@ Public Class AgentMascot
                 Box.Height = Double.NaN
                 Box.ClipToBounds = False
             End If
-            Box.Measure(New Size(330, If(Entry.NeedScroll, LongMax, Double.PositiveInfinity)))
+            Box.Measure(New Size(ColumnWidth + 10, If(Entry.NeedScroll, LongMax, Double.PositiveInfinity)))
             Dim Height As Double = If(Entry.NeedScroll, LongMax, Math.Max(20, Box.DesiredSize.Height))
-            Dim Width As Double = Math.Min(320, Math.Max(60, Box.DesiredSize.Width))
+            Dim Width As Double = Math.Min(ColumnWidth, Math.Max(60, Box.DesiredSize.Width))
             Bottom -= Height
-            Dim X As Double = If(Entry.IsUser, BaseX + (320 - Width), BaseX)
+            Dim X As Double = If(Entry.IsUser, BaseX + (ColumnWidth - Width), BaseX)
             Canvas.SetLeft(Box, X)
             If Animate Then
                 Box.BeginAnimation(Canvas.TopProperty, New DoubleAnimation(Bottom, New Duration(TimeSpan.FromMilliseconds(150))) With {
@@ -876,7 +886,7 @@ Public Class AgentMascot
         Canvas.SetLeft(PanMessageLayer, 0)
         Canvas.SetTop(PanMessageLayer, 0)
         PanMessageLayer.Clip = New RectangleGeometry(New Rect(0, AreaTop, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight - AreaTop)))
-        WheelCatcher.Width = 320
+        WheelCatcher.Width = ColumnWidth
         WheelCatcher.Height = Math.Max(0, AreaBottom - Math.Min(Bottom, AreaBottom))
         Canvas.SetLeft(WheelCatcher, BaseX)
         Canvas.SetTop(WheelCatcher, Math.Min(Bottom, AreaBottom))
@@ -1099,6 +1109,10 @@ Public Class AgentMascot
                 RunInUi(Sub()
                            SetBusy(False)
                            Reply.Notes.Clear()
+                           Dim Summary As String = ModAgentChanges.Summary()
+                           If Summary <> "" Then
+                               Reply.Raw.Append(vbCrLf & vbCrLf & ChrW(30) & vbCrLf & vbCrLf & "> " & Summary)
+                           End If
                            Reply.Host.Children.Clear()
                            RenderEntry(Reply)
                            LayoutMessages()

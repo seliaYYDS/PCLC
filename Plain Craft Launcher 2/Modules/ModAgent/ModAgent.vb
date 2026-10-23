@@ -89,6 +89,7 @@ Public Class ModAgent
         End If
         IsWaiting = True
         CancelRequested = False
+        ModAgentChanges.Reset()
         SyncLock Sync
             Raw.Add(New JObject From {{"role", "user"}, {"content", UserText}})
             SaveSession()
@@ -134,6 +135,7 @@ Public Class ModAgent
                             })
                         End SyncLock
                     Next
+                    OnText(vbCrLf & vbCrLf & ChrW(30) & vbCrLf & vbCrLf)
                     Continue Do
                 End If
 
