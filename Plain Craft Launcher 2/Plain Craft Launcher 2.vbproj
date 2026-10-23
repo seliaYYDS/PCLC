@@ -1,4 +1,4 @@
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -7,7 +7,7 @@
     <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{F184B08F-C81C-45F6-A57F-5ABD9991F28F}</ProjectTypeGuids>
     <OutputType>WinExe</OutputType>
     <RootNamespace>PCL</RootNamespace>
-    <AssemblyName>Plain Craft Launcher 2</AssemblyName>
+    <AssemblyName>PCLC</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <MyType>Custom</MyType>
     <IsWebBootstrapper>false</IsWebBootstrapper>
@@ -183,6 +183,14 @@
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>
     <Reference Include="WindowsBase" />
+    <Reference Include="Microsoft.Web.WebView2.Core">
+      <HintPath>Resources\WebView2\Microsoft.Web.WebView2.Core.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.Web.WebView2.Wpf">
+      <HintPath>Resources\WebView2\Microsoft.Web.WebView2.Wpf.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
   </ItemGroup>
@@ -197,6 +205,14 @@
     <Compile Include="Controls\MyComboBox.vb" />
     <Compile Include="Controls\MyComboBoxItem.vb" />
     <Compile Include="Controls\MyCard.vb" />
+    <Compile Include="Controls\MyColorPicker.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentProviders.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentTools.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentContent.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentChanges.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentWeb.vb" />
+    <Compile Include="Modules\ModAgent\ModAgentLlm.vb" />
+    <Compile Include="Modules\ModAgent\ModAgent.vb" />
     <Compile Include="Controls\MyExtraTextButton.xaml.vb">
       <DependentUpon>MyExtraTextButton.xaml</DependentUpon>
     </Compile>
@@ -335,6 +351,7 @@
     <Compile Include="Modules\Minecraft\ModDownload.vb" />
     <Compile Include="Modules\Minecraft\ModLaunch.vb" />
     <Compile Include="Modules\Minecraft\ModMinecraft.vb" />
+    <Compile Include="Modules\Minecraft\MsLoginBrowser.vb" />
     <Compile Include="Pages\PageOther\PageOtherTest.xaml.vb">
       <DependentUpon>PageOtherTest.xaml</DependentUpon>
     </Compile>
@@ -380,6 +397,9 @@
     </Compile>
     <Compile Include="Pages\PageSetup\PageSetupSystem.xaml.vb">
       <DependentUpon>PageSetupSystem.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Pages\PageSetup\PageSetupAgent.xaml.vb">
+      <DependentUpon>PageSetupAgent.xaml</DependentUpon>
     </Compile>
     <Compile Include="Pages\PageSetup\PageSetupLink.xaml.vb">
       <DependentUpon>PageSetupLink.xaml</DependentUpon>
@@ -458,6 +478,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Controls\AgentMascot.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="FormMain.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -490,6 +514,9 @@
     </Compile>
     <Compile Include="Controls\MyRadioButton.xaml.vb">
       <DependentUpon>MyRadioButton.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\AgentMascot.xaml.vb">
+      <DependentUpon>AgentMascot.xaml</DependentUpon>
     </Compile>
     <Compile Include="FormMain.xaml.vb">
       <DependentUpon>FormMain.xaml</DependentUpon>
@@ -636,6 +663,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Pages\PageSetup\PageSetupAgent.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Pages\PageSetup\PageSetupLink.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -740,7 +771,7 @@
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.5.2">
       <Visible>False</Visible>
-      <ProductName>Microsoft .NET Framework 4.5.2 %28x86 和 x64%29</ProductName>
+      <ProductName>Microsoft .NET Framework 4.5.2 %28x86 鍜?x64%29</ProductName>
       <Install>true</Install>
     </BootstrapperPackage>
     <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
@@ -751,11 +782,21 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Images\icon.ico" />
+    <Resource Include="Images\Splash.png" />
+    <Resource Include="Images\Celia\celia_shy.png" />
+    <Resource Include="Images\Celia\celia_angry.png" />
+    <Resource Include="Images\Celia\celia_confused.png" />
+    <Resource Include="Images\Celia\celia_happy.png" />
+    <Resource Include="Images\Celia\celia_normal.png" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\Font.ttf" />
     <None Include="Resources\Help.zip" />
     <None Include="Resources\NAudio.dll" />
+    <Content Include="Resources\WebView2\WebView2Loader.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>WebView2Loader.dll</Link>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Images\Heads\LTCat.jpg" />

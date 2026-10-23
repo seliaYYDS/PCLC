@@ -5,9 +5,36 @@ Friend Module ModSecret
     '标注 PCL 的不同分支，仅用于替换标记
     Public Const VersionBranchMain As String = "OpenSource"
     '在开源版的注册表与常规版的注册表隔离，以防数据冲突
+    '彩虹配色
+    Public RainbowMode As Boolean = False
+    Private RainbowTimer As Windows.Threading.DispatcherTimer
+
+    Private Sub StartRainbow()
+        If RainbowTimer Is Nothing Then
+            RainbowTimer = New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(60)}
+            AddHandler RainbowTimer.Tick,
+                Sub(sender, args)
+                    If Not RainbowMode Then Return
+                    ColorHue = (ColorHue + 5) Mod 360
+                    ColorHue2 = (ColorHue + 80) Mod 360
+                    ColorSat = 72
+                    ColorSat2 = 72
+                    ApplyThemeColors()
+                    ThemeRefreshMain()
+                End Sub
+        End If
+        RainbowTimer.Start()
+    End Sub
+    Private Sub StopRainbow()
+        If RainbowTimer IsNot Nothing Then RainbowTimer.Stop()
+    End Sub
     Public Const RegFolder As String = "PCLDebug"
-    '用于微软登录的 ClientId
-    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "")
+    '用于微软登录的 ClientId。默认使用 Minecraft 官方启动器公开的 Live 应用 ID，无需自行注册 Azure 应用
+    Public OAuthClientId As String = If(Environment.GetEnvironmentVariable("PCL_MS_CLIENT_ID"), "00000000402b5328")
+    '微软登录使用的 OAuth 权限范围（Live 版）
+    Public Const MsOAuthScope As String = "service::user.auth.xboxlive.com::MBI_SSL"
+    '微软登录的固定回调地址（由 Live 应用预先注册，无需本地监听）
+    Public Const MsRedirectUri As String = "https://login.live.com/oauth20_desktop.srf"
     'CurseForge API Key
     Public CurseForgeAPIKey As String = If(Environment.GetEnvironmentVariable("PCL_CURSEFORGE_API_KEY"), "")
     '用于匿名数据收集的腾讯云日志服务上报 URL，形如 https://{region}.cls.tencentcs.com/track?topic_id={topic_id}
@@ -62,22 +89,99 @@ Friend Module ModSecret
     Public ColorSemiTransparent As New MyColor(1, Color8)
 
     Public ThemeNow As Integer = -1
-    Public ColorHue As Integer = 210, ColorSat As Integer = 85, ColorLightAdjust As Integer = 0, ColorHueTopbarDelta As OneOf(Of Integer, Integer()) = 0
+    '主色：决定主要控件与标题栏基调
+    Public ColorHue As Integer = 228, ColorSat As Integer = 45, ColorLightAdjust As Integer = -2
+    '副色：决定浅色阶与标题栏渐变的另一端
+    Public ColorHue2 As Integer = 255, ColorSat2 As Integer = 35, ColorLightAdjust2 As Integer = 10
+    '兼容旧字段
+    Public ColorHueTopbarDelta As OneOf(Of Integer, Integer()) = 0
     Public ThemeDontClick As Integer = 0
 
-    Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
+    ''' <summary>把颜色换算成主色阶使用的 HSL（H 0-360，S/L 0-100）。</summary>
+    Friend Sub MyColorToHsl(Col As MyColor, ByRef Hue As Integer, ByRef Sat As Integer, ByRef Light As Integer)
+        Dim R As Double = Col.R / 255, G As Double = Col.G / 255, B As Double = Col.B / 255
+        Dim Max As Double = Math.Max(R, Math.Max(G, B))
+        Dim Min As Double = Math.Min(R, Math.Min(G, B))
+        Dim L As Double = (Max + Min) / 2
+        Dim H As Double = 0, S As Double = 0
+        If Max <> Min Then
+            Dim D As Double = Max - Min
+            S = If(L > 0.5, D / (2 - Max - Min), D / (Max + Min))
+            Select Case Max
+                Case R : H = (G - B) / D + If(G < B, 6, 0)
+                Case G : H = (B - R) / D + 2
+                Case Else : H = (R - G) / D + 4
+            End Select
+            H *= 60
+        End If
+        Hue = CInt(Math.Round(H))
+        Sat = CInt(Math.Round(S * 100))
+        Light = CInt(Math.Round(L * 100))
+    End Sub
+    ''' <summary>解析 H,S,L 形式的字符串，失败返回 False。</summary>
+    Friend Function TryParseHsl(Text As String, ByRef Hue As Integer, ByRef Sat As Integer, ByRef Light As Integer) As Boolean
         Try
-            If ThemeNow = NewTheme AndAlso NewTheme >= 0 Then Return
-            If NewTheme >= 0 Then ThemeNow = NewTheme
+            Dim Parts = Text.Split(","c)
+            If Parts.Length <> 3 Then Return False
+            Hue = CInt(Parts(0))
+            Sat = CInt(Parts(1))
+            Light = CInt(Parts(2))
+            Return True
+        Catch
+            Return False
+        End Try
+    End Function
+    '主题配色表：每项为 主色 H,S,L 与 副色 H,S,L
+    Private ReadOnly ThemePairs As New Dictionary(Of Integer, Integer()) From {
+        {0, {210, 85, 45, 195, 75, 58}},
+        {1, {172, 55, 45, 150, 50, 58}},
+        {2, {128, 45, 45, 95, 45, 56}},
+        {3, {45, 75, 45, 28, 80, 56}},
+        {4, {28, 45, 45, 16, 40, 58}},
+        {5, {210, 6, 45, 210, 4, 56}},
+        {6, {340, 60, 45, 318, 55, 58}},
+        {7, {275, 50, 45, 252, 45, 58}},
+        {8, {40, 60, 45, 22, 55, 58}},
+        {9, {22, 75, 45, 8, 70, 58}},
+        {10, {358, 65, 45, 338, 60, 58}},
+        {11, {215, 90, 43, 190, 85, 56}},
+        {12, {190, 80, 45, 45, 90, 52}},
+        {13, {45, 90, 45, 12, 85, 56}},
+        {15, {228, 45, 43, 256, 81, 90}}  '#DBD0FA
+    }
 
+    ''' <summary>读取某个主题的主色与副色（H,S,L）。自定义主题从设置读取，失败返回 False。</summary>
+    Friend Function GetThemeColors(ThemeId As Integer,
+                                   ByRef H1 As Integer, ByRef S1 As Integer, ByRef L1 As Integer,
+                                   ByRef H2 As Integer, ByRef S2 As Integer, ByRef L2 As Integer) As Boolean
+        If ThemeId = 14 Then
+            If Not TryParseHsl(Settings.Get(Of String)("UiCustomPrimary"), H1, S1, L1) Then Return False
+            If Not TryParseHsl(Settings.Get(Of String)("UiCustomSecondary"), H2, S2, L2) Then Return False
+            Return True
+        End If
+        Dim Pair As Integer() = Nothing
+        If Not ThemePairs.TryGetValue(ThemeId, Pair) Then Return False
+        H1 = Pair(0)
+        S1 = Pair(1)
+        L1 = Pair(2)
+        H2 = Pair(3)
+        S2 = Pair(4)
+        L2 = Pair(5)
+        Return True
+    End Function
+
+    ''' <summary>按当前 ColorHue 等参数重算全部颜色资源。</summary>
+    Private Sub ApplyThemeColors()
+            '主色阶
             Color1 = New MyColor().FromHSL2(ColorHue, ColorSat * 0.2, 25 + ColorLightAdjust * 0.3)
             Color2 = New MyColor().FromHSL2(ColorHue, ColorSat, 45 + ColorLightAdjust)
             Color3 = New MyColor().FromHSL2(ColorHue, ColorSat, 55 + ColorLightAdjust)
             Color4 = New MyColor().FromHSL2(ColorHue, ColorSat, 65 + ColorLightAdjust)
-            Color5 = New MyColor().FromHSL2(ColorHue, ColorSat, 80 + ColorLightAdjust * 0.4)
-            Color6 = New MyColor().FromHSL2(ColorHue, ColorSat, 91 + ColorLightAdjust * 0.1)
-            Color7 = New MyColor().FromHSL2(ColorHue, ColorSat, 95)
-            Color8 = New MyColor().FromHSL2(ColorHue, ColorSat, 97)
+            '副色阶（浅色、描边与背景）
+            Color5 = New MyColor().FromHSL2(ColorHue2, ColorSat2, 80 + ColorLightAdjust2 * 0.4)
+            Color6 = New MyColor().FromHSL2(ColorHue2, ColorSat2, 91 + ColorLightAdjust2 * 0.1)
+            Color7 = New MyColor().FromHSL2(ColorHue2, ColorSat2, 95)
+            Color8 = New MyColor().FromHSL2(ColorHue2, ColorSat2, 97)
             ColorBg0 = Color4 * 0.4 + Color5 * 0.4 + ColorGray4 * 0.2
             ColorBg1 = New MyColor(190, Color7)
 
@@ -102,23 +206,86 @@ Friend Module ModSecret
             Application.Current.Resources("ColorObject8") = CType(Color8, Color)
             Application.Current.Resources("ColorObjectBg0") = CType(ColorBg0, Color)
             Application.Current.Resources("ColorObjectBg1") = CType(ColorBg1, Color)
+    End Sub
+
+    Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
+        Try
+            If ThemeNow = NewTheme AndAlso NewTheme >= 0 Then Return
+            If NewTheme = 16 Then
+                RainbowMode = True
+                StartRainbow()
+            ElseIf NewTheme >= 0 Then
+                RainbowMode = False
+                StopRainbow()
+            End If
+            If NewTheme >= 0 Then
+                ThemeNow = NewTheme
+                Dim H1 As Integer, S1 As Integer, L1 As Integer
+                Dim H2 As Integer, S2 As Integer, L2 As Integer
+                If NewTheme <> 16 AndAlso GetThemeColors(NewTheme, H1, S1, L1, H2, S2, L2) Then
+                    ColorHue = H1
+                    ColorSat = S1
+                    ColorLightAdjust = L1 - 45
+                    ColorHue2 = H2
+                    ColorSat2 = S2
+                    ColorLightAdjust2 = L2 - 48
+                End If
+            End If
+
+            ApplyThemeColors()
             ThemeRefreshMain()
         Catch ex As Exception
             Logger.Error(ex, "刷新主题颜色失败", LogBehavior.Toast)
+        End Try
+    End Sub
+    ''' <summary>强制按当前设置重算主题颜色，忽略主题是否变化。</summary>
+    Public Sub ThemeRefreshForce()
+        Try
+            Dim Theme As Integer = Settings.Get(Of Integer)("UiLauncherTheme")
+            ThemeNow = Theme
+            If Theme = 16 Then
+                RainbowMode = True
+                StartRainbow()
+            Else
+                RainbowMode = False
+                StopRainbow()
+            End If
+            Dim H1 As Integer, S1 As Integer, L1 As Integer
+            Dim H2 As Integer, S2 As Integer, L2 As Integer
+            If Theme <> 16 AndAlso GetThemeColors(Theme, H1, S1, L1, H2, S2, L2) Then
+                ColorHue = H1
+                ColorSat = S1
+                ColorLightAdjust = L1 - 45
+                ColorHue2 = H2
+                ColorSat2 = S2
+                ColorLightAdjust2 = L2 - 48
+            End If
+            ApplyThemeColors()
+            ThemeRefreshMain()
+        Catch ex As Exception
+            Logger.Error(ex, "强制刷新主题颜色失败", LogBehavior.Toast)
         End Try
     End Sub
     Public Sub ThemeRefreshMain()
         RunInUi(
         Sub()
             If Not FrmMain.IsLoaded Then Return
-            '顶部条背景
-            Dim Brush = New LinearGradientBrush With {.EndPoint = New Point(1, 0), .StartPoint = New Point(0, 0)}
-            Dim Deltas = ColorHueTopbarDelta.Switch(Function(d) New Integer() {-d, 0, d}, Function(d) d)
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0, .Color = New MyColor().FromHSL2(ColorHue + Deltas(0), ColorSat, 48 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.5, .Color = New MyColor().FromHSL2(ColorHue + Deltas(1), ColorSat, 54 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue + Deltas(2), ColorSat, 48 + ColorLightAdjust)})
-            FrmMain.PanTitle.Background = Brush
+            '顶部条背景（0 渐变 / 1 纯色 / 2 半透明）
+            Dim Brush As LinearGradientBrush = Nothing
+            Select Case Settings.Get(Of Integer)("UiTitleStyle")
+                Case 1 '纯色
+                    FrmMain.PanTitle.Background = New SolidColorBrush(CType(New MyColor().FromHSL2(ColorHue, ColorSat, 54 + ColorLightAdjust), Color))
+                Case 2 '半透明，允许露出窗口背景
+                    FrmMain.PanTitle.Background = New SolidColorBrush(CType(New MyColor().FromHSL2(ColorHue, ColorSat, 54 + ColorLightAdjust), Color)) With {.Opacity = 0.45}
+                Case Else '渐变：主色 → 副色
+                    Brush = New LinearGradientBrush With {.EndPoint = New Point(1, 0), .StartPoint = New Point(0, 0)}
+                    '两段式线性过渡，中点即主副色的 50% 混合，不会偏左或偏右
+                    Brush.GradientStops.Add(New GradientStop With {.Offset = 0, .Color = New MyColor().FromHSL2(ColorHue, ColorSat, 48 + ColorLightAdjust)})
+                    Brush.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue2, ColorSat2, 48 + ColorLightAdjust2)})
+                    FrmMain.PanTitle.Background = Brush
+            End Select
             FrmMain.PanTitle.Background.Freeze()
+            FrmMain.RefreshSideBarBackground()
             '主页面背景
             If Settings.Get(Of Boolean)("UiBackgroundColorful") Then
                 Brush = New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}

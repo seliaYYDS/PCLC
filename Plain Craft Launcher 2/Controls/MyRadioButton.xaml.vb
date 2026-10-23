@@ -1,3 +1,4 @@
+Imports System.Windows.Media.Animation
 Imports System.Windows.Markup
 
 <ContentProperty("Inlines")>
@@ -29,6 +30,42 @@ Public Class MyRadioButton
         End Set
     End Property
 
+    ''' <summary>是否显示自带的白色选中背景。</summary>
+    Public Property ShowCheckedBackground As Boolean = True
+
+    ''' <summary>仅图标模式：图标固定占 56 宽的一列并居中，文字在其右侧。</summary>
+    Public Sub SetLogoOnly(LogoOnly As Boolean)
+        If ShapeLogo Is Nothing OrElse ColLogo Is Nothing Then Return
+        If LogoOnly Then
+            ColLogo.Width = New GridLength(56)
+            ShapeLogo.HorizontalAlignment = HorizontalAlignment.Center
+            ShapeLogo.Margin = New Thickness(0)
+        Else
+            ColLogo.Width = GridLength.Auto
+            ShapeLogo.HorizontalAlignment = HorizontalAlignment.Left
+            ShapeLogo.Margin = New Thickness(12, 0, 0, 0)
+        End If
+    End Sub
+    ''' <summary>是否显示按钮文字（淡入淡出，按钮宽度固定所以图标不动）。</summary>
+    Private _ShowText As Boolean = True
+    Public Property ShowText As Boolean
+        Get
+            Return _ShowText
+        End Get
+        Set(value As Boolean)
+            _ShowText = value
+            If LabText Is Nothing Then Return
+            Dim Animation As New Animation.DoubleAnimation(If(value, 1.0, 0.0), New Duration(TimeSpan.FromMilliseconds(160)))
+            If value Then
+                LabText.Visibility = Visibility.Visible
+            Else
+                AddHandler Animation.Completed, Sub(sender, args)
+                                                   If Not _ShowText Then LabText.Visibility = Visibility.Collapsed
+                                               End Sub
+            End If
+            LabText.BeginAnimation(UIElement.OpacityProperty, Animation)
+        End Set
+    End Property
     Private _Checked As Boolean = False '是否选中
     Public Property Checked As Boolean
         Get
@@ -178,7 +215,7 @@ Public Class MyRadioButton
                                          AaColor(ShapeLogo, Shapes.Path.FillProperty, "ColorBrush3", AnimationTimeOfCheck),
                                          AaColor(LabText, TextBlock.ForegroundProperty, "ColorBrush3", AnimationTimeOfCheck)
                                     }, "MyRadioButton Checked " & Uuid)
-                            AniStart(AaColor(Me, BackgroundProperty, New MyColor(255, 255, 255) - Background, AnimationTimeOfCheck), "MyRadioButton Color " & Uuid)
+                            If ShowCheckedBackground Then AniStart(AaColor(Me, BackgroundProperty, New MyColor(255, 255, 255) - Background, AnimationTimeOfCheck), "MyRadioButton Color " & Uuid)
                         ElseIf IsMouseDown Then
                             '按下
                             AniStart(AaColor(Me, BackgroundProperty, New MyColor(120, Color8) - Background, 60), "MyRadioButton Color " & Uuid)

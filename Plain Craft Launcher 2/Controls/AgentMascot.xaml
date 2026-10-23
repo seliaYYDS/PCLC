@@ -1,0 +1,81 @@
+<Canvas x:Class="AgentMascot"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PCL"
+        Background="{x:Null}">
+    <Canvas.Resources>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="#C9CDDB" CornerRadius="2"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Canvas.Resources>
+    <Canvas x:Name="PanMessageLayer" Background="{x:Null}"/>
+
+    <Border x:Name="PanInput" Width="380" Height="44" Visibility="Collapsed"
+            Background="#FFFFFF" CornerRadius="10" BorderBrush="#D8DCE8" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="10" ShadowDepth="1" Opacity="0.12" Direction="270"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <local:MyIconButton x:Name="BtnAgentClear" Width="26" Height="26" Margin="7,0,2,0"
+                                VerticalAlignment="Center" Theme="Black" LogoScale="0.55"
+                                Logo="F0 M4,2 h12 v2 h-12 v-2 Z M5,6 h10 v10 h-10 v-10 Z"
+                                ToolTip="清空对话"/>
+            <local:MyIconButton x:Name="BtnAgentClose" Grid.Column="1" Width="26" Height="26" Margin="2,0,6,0"
+                                VerticalAlignment="Center" Theme="Black" LogoScale="0.6"
+                                Logo="F1 M2,0 L0,2 8,10 0,18 2,20 10,12 18,20 20,18 12,10 20,2 18,0 10,8 2,0Z"
+                                ToolTip="关闭对话"/>
+            <TextBox x:Name="TxtInput" Grid.Column="2" Margin="0,6,6,6" FontSize="13" VerticalContentAlignment="Center"
+                     Background="{x:Null}" BorderThickness="0" Padding="4,0" KeyDown="TxtInput_KeyDown"/>
+            <Grid Grid.Column="3" Margin="0,0,7,0" VerticalAlignment="Center">
+                <local:MyButton x:Name="BtnSend" Text="发送" MinWidth="58" Height="30" Padding="10,0"/>
+                <Border x:Name="PanSendBusy" Width="58" Height="30" CornerRadius="6" Background="#E8EAFF"
+                        Visibility="Collapsed" Cursor="Hand">
+                    <Grid>
+                        <Canvas x:Name="PanRing" Width="18" Height="18" RenderTransformOrigin="0.5,0.5">
+                            <Canvas.RenderTransform>
+                                <RotateTransform x:Name="RingRotate"/>
+                            </Canvas.RenderTransform>
+                            <Path Data="M9,2 A7,7 0 1 1 2,9" Stroke="#5B6CFF" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                        </Canvas>
+                        <Rectangle x:Name="RecStop" Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="#5B6CFF"
+                                   Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+
+    <Image x:Name="ImgMascot" Height="140" Cursor="Hand" Stretch="Uniform" RenderTransformOrigin="0.5,1"
+           RenderOptions.BitmapScalingMode="HighQuality">
+        <Image.RenderTransform>
+            <TranslateTransform x:Name="TransMascot"/>
+        </Image.RenderTransform>
+    </Image>
+</Canvas>

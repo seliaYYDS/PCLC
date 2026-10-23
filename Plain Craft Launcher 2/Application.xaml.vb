@@ -108,7 +108,7 @@ RetryCacheCheck:
             End If
             '设置初始窗口
             If Settings.Get(Of Boolean)("UiLauncherLogo") Then
-                FrmStart = New SplashScreen("Images\icon.ico")
+                FrmStart = New SplashScreen("Images\Splash.png")
                 FrmStart.Show(False, True)
             End If
             '基础信息
@@ -164,8 +164,8 @@ RetryCacheCheck:
                 End Try
             End If
             '将已有的 PCL 窗口拖出来
-            Dim WindowHwnd As IntPtr = FindWindow(Nothing, "Plain Craft Launcher　")
-            If WindowHwnd = IntPtr.Zero Then WindowHwnd = FindWindow(Nothing, "Plain Craft Launcher 2　")
+            Dim WindowHwnd As IntPtr = FindWindow(Nothing, "PCLC　")
+            If WindowHwnd = IntPtr.Zero Then WindowHwnd = FindWindow(Nothing, "PCLC 2　")
             If WindowHwnd <> IntPtr.Zero Then ShowWindowToTop(WindowHwnd)
             '播放提示音并退出
             Beep()

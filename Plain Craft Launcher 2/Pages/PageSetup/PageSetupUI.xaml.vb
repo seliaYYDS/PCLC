@@ -28,13 +28,7 @@ Public Class PageSetupUI
 
         SliderLoad()
 
-        If BuildType = BuildTypes.Release Then PanLauncherHide.Visibility = Visibility.Visible
 
-        '设置解锁
-        If Not RadioLauncherTheme8.IsEnabled Then LabLauncherTheme8Copy.ToolTip = $"累积赞助达到 ¥23.33 后，在爱发电私信发送【土豆 {Identify}】以解锁。" & vbCrLf & "右键打开赞助页面，如果觉得 PCL 做得还不错就支持一下吧 =w=！"
-        RadioLauncherTheme8.ToolTip = $"累积赞助达到 ¥23.33 后，在爱发电私信发送【土豆 {Identify}】以解锁"
-        If Not RadioLauncherTheme9.IsEnabled Then LabLauncherTheme9Copy.ToolTip = "· 反馈一个 Bug，在标记为 [完成] 后回复识别码要求解锁（右键打开反馈页面）" & vbCrLf & "· 提交一个 Pull Request 或主页预设，在标记为 [完成] 后回复识别码要求解锁"
-        RadioLauncherTheme9.ToolTip = "· 反馈一个 Bug，在标记为 [完成] 后回复识别码要求解锁" & vbCrLf & "· 提交一个 Pull Request 或主页预设，在标记为 [完成] 后回复识别码要求解锁"
         '极客蓝的处理在 ThemeCheck 中
 
     End Sub
@@ -42,6 +36,8 @@ Public Class PageSetupUI
         Try
             SettingService.RefreshSettings(Me)
             BackgroundRefresh(False, False)
+            RefreshPickers()
+            RefreshCustomColorVisibility()
 
             '标题栏
             CheckLogoLeft.Visibility = If(RadioLogoType0.Checked, Visibility.Visible, Visibility.Collapsed)
@@ -71,13 +67,32 @@ Public Class PageSetupUI
         Refresh()
     End Sub
 
-    '背景图片
-    Private Sub BtnUIBgOpen_Click(sender As Object, e As EventArgs) Handles BtnBackgroundOpen.Click
-        OpenExplorer(Paths.Base & "PCL\Pictures\")
+    '背景媒体
+    Private Sub BtnBackgroundFile_Click(sender As Object, e As EventArgs) Handles BtnBackgroundFile.Click
+        Dim File As String = Dialogs.SelectFile("选择背景媒体", False,
+            filter:={({"png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "m4v", "wmv", "avi", "mov"}, "图片与视频")}).FirstOrDefault
+        If String.IsNullOrEmpty(File) Then Return
+        Settings.Set("UiBackgroundPath", File)
+        BackgroundRefresh(True, True)
+        Refresh()
+    End Sub
+    Private Sub BtnBackgroundFolder_Click(sender As Object, e As EventArgs) Handles BtnBackgroundFolder.Click
+        Dim Folder As String = Dialogs.SelectFolder("选择背景媒体文件夹", False).FirstOrDefault
+        If String.IsNullOrEmpty(Folder) Then Return
+        Settings.Set("UiBackgroundPath", Folder)
+        BackgroundRefresh(True, True)
+        Refresh()
     End Sub
     Private Sub BtnBackgroundRefresh_Click(sender As Object, e As EventArgs) Handles BtnBackgroundRefresh.Click
         BackgroundRefresh(True, True)
     End Sub
+    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
+        Settings.Set("UiBackgroundPath", "")
+        BackgroundRefresh(False, True)
+        Hint("背景媒体已清空！", HintType.Green)
+        Refresh()
+    End Sub
+
     Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
         If IsNothing(PanBackgroundOpacity) Then Return
         If Show Then
@@ -85,74 +100,90 @@ Public Class PageSetupUI
             PanBackgroundBlur.Visibility = Visibility.Visible
             PanBackgroundSuit.Visibility = Visibility.Visible
             BtnBackgroundClear.Visibility = Visibility.Visible
-            CardBackground.Title = "背景图片（" & Count & " 张）"
+            CardBackground.Title = If(Count > 1, $"背景媒体（{Count} 个）", "背景媒体")
         Else
             PanBackgroundOpacity.Visibility = Visibility.Collapsed
             PanBackgroundBlur.Visibility = Visibility.Collapsed
             PanBackgroundSuit.Visibility = Visibility.Collapsed
             BtnBackgroundClear.Visibility = Visibility.Collapsed
-            CardBackground.Title = "背景图片"
+            CardBackground.Title = "背景媒体"
         End If
         CardBackground.TriggerForceResize()
     End Sub
-    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
-        If MyMsgBox("即将删除背景图片文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
-            DirectoryUtils.Delete(Paths.Base & "PCL\Pictures")
-            BackgroundRefresh(False, True)
-            Hint("背景图片已清空！", HintType.Green)
-        End If
-    End Sub
+
+    ''' <summary>是否为支持的视频文件。</summary>
+    Public Shared Function IsVideoFile(Path As String) As Boolean
+        Select Case PathUtils.GetExtension(Path).ToLower
+            Case "mp4", "m4v", "wmv", "avi", "mov"
+                Return True
+            Case Else
+                Return False
+        End Select
+    End Function
+    ''' <summary>是否为支持的图片文件。</summary>
+    Public Shared Function IsImageFile(Path As String) As Boolean
+        Select Case PathUtils.GetExtension(Path).ToLower
+            Case "png", "jpg", "jpeg", "gif", "webp", "bmp"
+                Return True
+            Case Else
+                Return False
+        End Select
+    End Function
+
     ''' <summary>
-    ''' 刷新背景图片及设置页 UI。
+    ''' 刷新背景媒体及设置页 UI。
     ''' </summary>
     ''' <param name="IsHint">是否显示刷新提示。</param>
-    ''' <param name="Refresh">是否刷新图片显示。</param>
+    ''' <param name="Refresh">是否刷新显示。</param>
     Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
         Try
+            Dim Source As String = Settings.Get(Of String)("UiBackgroundPath")
+            Logger.Info($"背景媒体来源：{If(String.IsNullOrWhiteSpace(Source), "(未设置)", Source)}")
+            Dim Address As String = Nothing
+            Dim Count As Integer = 0
 
-            '获取可用的图片文件
-            DirectoryUtils.Create(Paths.Base & "PCL\Pictures\")
-            Dim Pic As New List(Of String)
-            For Each File In DirectoryUtils.EnumerateFiles(Paths.Base & "PCL\Pictures\", True)
-                Dim Extension As String = PathUtils.GetExtension(File)
-                If Extension <> "ini" AndAlso Extension <> "db" Then Pic.Add(File) '文件夹可能会被加入 .ini 和 thumbs.db
-            Next
-            '加载
-            If Not Pic.Any() Then
-                If Refresh Then
-                    If FrmMain.ImgBack.Visibility = Visibility.Collapsed Then
-                        If IsHint Then Hint("未检测到可用背景图片！", HintType.Red)
-                    Else
-                        FrmMain.ImgBack.Visibility = Visibility.Collapsed
-                        If IsHint Then Hint("背景图片已清除！", HintType.Green)
-                    End If
+            If Not String.IsNullOrWhiteSpace(Source) Then
+                If System.IO.Directory.Exists(Source) Then
+                    Dim Files As New List(Of String)
+                    For Each File In DirectoryUtils.EnumerateFiles(Source, True)
+                        If IsVideoFile(File) OrElse IsImageFile(File) Then Files.Add(File)
+                    Next
+                    Count = Files.Count
+                    If Files.Any Then Address = RandomOne(Files)
+                ElseIf System.IO.File.Exists(Source) AndAlso (IsVideoFile(Source) OrElse IsImageFile(Source)) Then
+                    Address = Source
+                    Count = 1
                 End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(False, 0)
-            Else
-                If Refresh Then
-                    Dim Address As String = RandomOne(Pic)
-                    Try
-                        Logger.Info($"加载背景图片：{Address}")
-                        FrmMain.ImgBack.Background = New MyBitmap(Address)
-                        FrmMain.ImgBack.Visibility = Visibility.Visible
-                        FrmMain.UpdateBackgroundAndTitleBar()
-                        If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
-                    Catch ex As Exception
-                        If ex.Message.Contains("参数无效") Then
-                            Logger.Error($"刷新背景图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{Address}", LogBehavior.Alert)
-                        Else
-                            Logger.Error(ex, $"刷新背景图片失败（{Address}）", LogBehavior.Alert)
-                        End If
-                    End Try
-                End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(True, Pic.Count)
             End If
 
+            If Refresh Then
+                If Address Is Nothing Then
+                    FrmMain.StopVideoBackground()
+                    FrmMain.ImgBack.Visibility = Visibility.Collapsed
+                    If IsHint Then Hint("未找到可用的背景媒体！", HintType.Red)
+                Else
+                    Try
+                        Logger.Info($"加载背景媒体：{Address}")
+                        If IsVideoFile(Address) Then
+                            FrmMain.ImgBack.Visibility = Visibility.Collapsed
+                            FrmMain.PlayVideoBackground(Address)
+                        Else
+                            FrmMain.StopVideoBackground()
+                            FrmMain.ImgBack.Background = New MyBitmap(Address)
+                            FrmMain.ImgBack.Visibility = Visibility.Visible
+                        End If
+                        FrmMain.UpdateBackgroundAndTitleBar()
+                        If IsHint Then Hint("背景已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
+                    Catch ex As Exception
+                        Logger.Error(ex, $"刷新背景媒体失败（{Address}）", LogBehavior.Alert)
+                    End Try
+                End If
+            End If
+            If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(Address IsNot Nothing, Count)
         Catch ex As Exception
-            Logger.Error(ex, "刷新背景图片时出现未知错误")
+            Logger.Error(ex, "刷新背景媒体时出现未知错误")
         End Try
     End Sub
-
     '顶部栏
     Private Sub BtnLogoChange_Click(sender As Object, e As EventArgs) Handles BtnLogoChange.Click
         Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpg", "jpeg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
@@ -350,70 +381,6 @@ Refresh:
         End If
     End Sub
 
-    '主题
-    Private Sub LabLauncherTheme5Unlock_MouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs) Handles LabLauncherTheme5Unlock.MouseLeftButtonUp
-        RadioLauncherTheme5Gray.Opacity -= 0.7
-        RadioLauncherTheme5.Opacity += 0.7
-        AniStart({
-            AaOpacity(RadioLauncherTheme5Gray, 1, 1000 * AniSpeed, 500 * AniSpeed, New AniEaseInFluent),
-            AaOpacity(RadioLauncherTheme5, -1, 1000 * AniSpeed, 500 * AniSpeed, New AniEaseInFluent)
-        }, "ThemeUnlock")
-        If RadioLauncherTheme5Gray.Opacity < 0.02 Then
-            ThemeUnlock(5, UnlockHint:="隐藏主题 玄素黑 已解锁！")
-            AniStop("ThemeUnlock")
-            RadioLauncherTheme5.Checked = True
-        End If
-    End Sub
-    Private Sub LabLauncherTheme11Click_MouseLeftButtonUp() Handles LabLauncherTheme11Click.MouseLeftButtonUp, RadioLauncherTheme11.MouseRightButtonUp
-        If LabLauncherTheme11Click.Visibility = Visibility.Collapsed OrElse If(LabLauncherTheme11Click.ToolTip, "").ToString.Contains("点击") Then
-            If MyMsgBox(
-                "1. 不爬取或攻击相关服务或网站，不盗取相关账号，没有谜题可以或需要以此来解决。" & vbCrLf &
-                "2. 不得篡改或损毁相关公开信息，请尽量让它们保持原状。" & vbCrLf &
-                "3. 在你感到迷茫的时候，看看回声洞可能会给你带来惊喜。" & vbCrLf & vbCrLf &
-                "若违规，可能会被从任意相关群中踢出！",
-                "解密游戏的基本规则", "我知道了", "恕我拒绝") = 1 Then
-                MyMsgBox("你需要用自己的智慧来找到下一步的线索……" & vbCrLf &
-                         "初始线索：gnp.dorC61\60\20\0202\moc.x1xa.2s\\:sp" & "T".Lower & "th", "解密游戏") '防止触发病毒检测规则
-            End If
-        End If
-    End Sub
-    Private Sub LabLauncherTheme8Copy_MouseRightButtonUp() Handles LabLauncherTheme8Copy.MouseRightButtonUp, RadioLauncherTheme8.MouseRightButtonUp
-        OpenWebsite("https://meloong.com/afd/a/LTCat")
-    End Sub
-    Private Sub LabLauncherTheme9Copy_MouseRightButtonUp() Handles LabLauncherTheme9Copy.MouseRightButtonUp, RadioLauncherTheme9.MouseRightButtonUp
-        PageOtherLeft.TryFeedback()
-    End Sub
-
-    '主题自定义
-    Private Sub RadioLauncherTheme14_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme14.Changed
-        If RadioLauncherTheme14.Checked Then
-            If LabLauncherHue.Visibility = Visibility.Visible Then Return
-            LabLauncherHue.Visibility = Visibility.Visible
-            SliderLauncherHue.Visibility = Visibility.Visible
-            LabLauncherSat.Visibility = Visibility.Visible
-            SliderLauncherSat.Visibility = Visibility.Visible
-            LabLauncherDelta.Visibility = Visibility.Visible
-            SliderLauncherDelta.Visibility = Visibility.Visible
-            LabLauncherLight.Visibility = Visibility.Visible
-            SliderLauncherLight.Visibility = Visibility.Visible
-        Else
-            If LabLauncherHue.Visibility = Visibility.Collapsed Then Return
-            LabLauncherHue.Visibility = Visibility.Collapsed
-            SliderLauncherHue.Visibility = Visibility.Collapsed
-            LabLauncherSat.Visibility = Visibility.Collapsed
-            SliderLauncherSat.Visibility = Visibility.Collapsed
-            LabLauncherDelta.Visibility = Visibility.Collapsed
-            SliderLauncherDelta.Visibility = Visibility.Collapsed
-            LabLauncherLight.Visibility = Visibility.Collapsed
-            SliderLauncherLight.Visibility = Visibility.Collapsed
-        End If
-        CardLauncher.TriggerForceResize()
-    End Sub
-    Private Sub HSL_Change() Handles SliderLauncherHue.Change, SliderLauncherLight.Change, SliderLauncherSat.Change, SliderLauncherDelta.Change
-        If AniControlEnabled <> 0 OrElse SliderLauncherSat Is Nothing OrElse Not SliderLauncherSat.IsLoaded Then Return
-        ThemeRefresh()
-    End Sub
-
 #Region "功能隐藏"
 
     Private Shared _HiddenForceShow As Boolean = False
@@ -475,15 +442,11 @@ Refresh:
             Dim OtherAvaliableCount As Integer = 0
             If Not Settings.Get(Of Boolean)("UiHiddenOtherHelp") Then OtherAvaliableCount += 1
             If Not Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then OtherAvaliableCount += 1
-            If Not Settings.Get(Of Boolean)("UiHiddenOtherTest") Then OtherAvaliableCount += 1
             If Not Settings.Get(Of Boolean)("UiHiddenOtherFeedback") Then OtherAvaliableCount += 1
-            If Not Settings.Get(Of Boolean)("UiHiddenOtherVote") Then OtherAvaliableCount += 1
             If FrmOtherLeft IsNot Nothing Then
                 FrmOtherLeft.ItemHelp.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherHelp"), Visibility.Collapsed, Visibility.Visible)
                 FrmOtherLeft.ItemFeedback.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherFeedback"), Visibility.Collapsed, Visibility.Visible)
-                FrmOtherLeft.ItemVote.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherVote"), Visibility.Collapsed, Visibility.Visible)
                 FrmOtherLeft.ItemAbout.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout"), Visibility.Collapsed, Visibility.Visible)
-                FrmOtherLeft.ItemTest.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest"), Visibility.Collapsed, Visibility.Visible)
                 '隐藏左边选择卡
                 FrmOtherLeft.PanItem.Visibility = If(OtherAvaliableCount < 2 AndAlso Not HiddenForceShow, Visibility.Collapsed, Visibility.Visible)
             End If
@@ -493,7 +456,7 @@ Refresh:
                 ElseIf Not Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then
                     FrmMain.BtnTitleSelect4.Text = "关于"
                 Else
-                    FrmMain.BtnTitleSelect4.Text = "百宝箱"
+                    FrmMain.BtnTitleSelect4.Text = "帮助"
                 End If
             Else
                 FrmMain.BtnTitleSelect4.Text = "更多"
@@ -543,25 +506,20 @@ Refresh:
         If CheckHiddenPageOther.Checked Then
             '开启
             CheckHiddenOtherAbout.Checked = True
-            CheckHiddenOtherTest.Checked = True
             CheckHiddenOtherFeedback.Checked = True
-            CheckHiddenOtherVote.Checked = True
             CheckHiddenOtherHelp.Checked = True
         Else
             '关闭
-            If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") AndAlso
-                Settings.Get(Of Boolean)("UiHiddenOtherVote") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherFeedback") Then
+            If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherFeedback") Then
                 CheckHiddenOtherAbout.Checked = False
-                CheckHiddenOtherTest.Checked = False
                 CheckHiddenOtherFeedback.Checked = False
-                CheckHiddenOtherVote.Checked = False
                 CheckHiddenOtherHelp.Checked = False
             End If
         End If
     End Sub
-    Private Sub HiddenOtherSub(sender As Object, user As Boolean) Handles CheckHiddenOtherHelp.Change, CheckHiddenOtherAbout.Change, CheckHiddenOtherTest.Change
+    Private Sub HiddenOtherSub(sender As Object, user As Boolean) Handles CheckHiddenOtherHelp.Change, CheckHiddenOtherAbout.Change
         '更多子页面（有具体内容的）
-        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") Then
+        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then
             '已被全部隐藏
             CheckHiddenPageOther.Checked = True
         Else
@@ -570,18 +528,16 @@ Refresh:
         End If
         '修改无具体内容的项
         If Not user Then Return
-        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") Then
+        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then
             CheckHiddenOtherFeedback.Checked = True
-            CheckHiddenOtherVote.Checked = True
         End If
     End Sub
-    Private Sub HiddenOtherNet(sender As Object, user As Boolean) Handles CheckHiddenOtherFeedback.Change, CheckHiddenOtherVote.Change
+    Private Sub HiddenOtherNet(sender As Object, user As Boolean) Handles CheckHiddenOtherFeedback.Change
         '更多子页面（无具体内容的）
         If Not user Then Return
-        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") AndAlso
-            (Not Settings.Get(Of Boolean)("UiHiddenOtherFeedback") OrElse Not Settings.Get(Of Boolean)("UiHiddenOtherVote")) Then
+        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso
+            Not Settings.Get(Of Boolean)("UiHiddenOtherFeedback") Then
             CheckHiddenOtherAbout.Checked = False
-            CheckHiddenOtherTest.Checked = False
             CheckHiddenOtherHelp.Checked = False
         End If
     End Sub
@@ -593,32 +549,68 @@ Refresh:
 
 #End Region
 
+    '自定义配色
+    Private Sub PickerPrimary_Changed() Handles PickerPrimary.Changed
+        ApplyPickerColor(True)
+    End Sub
+    Private Sub PickerSecondary_Changed() Handles PickerSecondary.Changed
+        ApplyPickerColor(False)
+    End Sub
+
+    '将某一个取色器的结果写入自定义配色并应用
+    Private Sub ApplyPickerColor(IsPrimary As Boolean)
+        Dim Picked As Color = If(IsPrimary, PickerPrimary.SelectedColor, PickerSecondary.SelectedColor)
+        Dim NewH As Integer, NewS As Integer, NewL As Integer
+        MyColorToHsl(New MyColor(Picked.R, Picked.G, Picked.B), NewH, NewS, NewL)
+        Dim PrimH As Integer = If(IsPrimary, NewH, ColorHue)
+        Dim PrimS As Integer = If(IsPrimary, NewS, ColorSat)
+        Dim PrimL As Integer = If(IsPrimary, NewL, 45 + ColorLightAdjust)
+        Dim SecH As Integer = If(IsPrimary, ColorHue2, NewH)
+        Dim SecS As Integer = If(IsPrimary, ColorSat2, NewS)
+        Dim SecL As Integer = If(IsPrimary, 48 + ColorLightAdjust2, NewL)
+        Settings.Set("UiCustomPrimary", $"{PrimH},{PrimS},{PrimL}")
+        Settings.Set("UiCustomSecondary", $"{SecH},{SecS},{SecL}")
+        Settings.Set("UiLauncherTheme", 14)
+        '主题值没变时 Set 不会触发刷新，这里强制重算一次，保证连续调整都生效
+        ThemeRefreshForce()
+        '同步单选框状态，让界面切到「自定义」
+        SettingService.RefreshSettings(Me)
+    End Sub
+
+    '按当前主题刷新两个取色器的初始颜色
+    Private Sub RefreshPickers()
+        If PickerPrimary Is Nothing Then Return
+        Dim H1 As Integer, S1 As Integer, L1 As Integer
+        Dim H2 As Integer, S2 As Integer, L2 As Integer
+        If GetThemeColors(Settings.Get(Of Integer)("UiLauncherTheme"), H1, S1, L1, H2, S2, L2) Then
+            PickerPrimary.SetColor(CType(New MyColor().FromHSL2(H1, S1, L1), Color))
+            PickerSecondary.SetColor(CType(New MyColor().FromHSL2(H2, S2, L2), Color))
+        Else
+            PickerPrimary.SetColor(CType(New MyColor().FromHSL2(ColorHue, ColorSat, 45 + ColorLightAdjust), Color))
+            PickerSecondary.SetColor(CType(New MyColor().FromHSL2(ColorHue2, ColorSat2, 48 + ColorLightAdjust2), Color))
+        End If
+    End Sub
+
+    '切换主题时同步两个取色器（延后到设置写入之后）
+    '彩虹配色不需要调色盘
+    Private Sub RefreshCustomColorVisibility()
+        If PanCustomColor Is Nothing Then Return
+        PanCustomColor.Visibility = If(Settings.Get(Of Integer)("UiLauncherTheme") = 16, Visibility.Collapsed, Visibility.Visible)
+    End Sub
+    Private Sub ThemeRadio_Change(sender As Object, e As RouteEventArgs) Handles RadioLauncherTheme0.Changed, RadioLauncherTheme1.Changed, RadioLauncherTheme2.Changed, RadioLauncherTheme3.Changed, RadioLauncherTheme4.Changed, RadioLauncherTheme5.Changed, RadioLauncherTheme6.Changed, RadioLauncherTheme7.Changed, RadioLauncherTheme8.Changed, RadioLauncherTheme9.Changed, RadioLauncherTheme10.Changed, RadioLauncherTheme11.Changed, RadioLauncherTheme12.Changed, RadioLauncherTheme13.Changed, RadioLauncherTheme14.Changed, RadioLauncherTheme15.Changed, RadioLauncherTheme16.Changed
+        If AniControlEnabled <> 0 Then Return
+        Dispatcher.BeginInvoke(New Action(Sub()
+                                             RefreshPickers()
+                                             RefreshCustomColorVisibility()
+                                             '同步所有主题单选项，避免不同父容器下出现多选
+                                             SettingService.RefreshSettings(Me)
+                                             RefreshCustomColorVisibility()
+                                         End Sub))
+    End Sub
     '滑动条
     Private Sub SliderLoad()
         SliderMusicVolume.GetHintText = Function(v) Math.Ceiling(v * 0.1) & "%"
         SliderLauncherTransparent.GetHintText = Function(v) Math.Round(40 + v * 0.1) & "%"
-        SliderLauncherHue.GetHintText = Function(v) v & "°"
-        SliderLauncherSat.GetHintText = Function(v) v & "%"
-        SliderLauncherDelta.GetHintText =
-        Function(Value As Integer) As String
-            If Value > 90 Then
-                Return "+" & (Value - 90)
-            ElseIf Value = 90 Then
-                Return 0
-            Else
-                Return Value - 90
-            End If
-        End Function
-        SliderLauncherLight.GetHintText =
-        Function(Value As Integer) As String
-            If Value > 20 Then
-                Return "+" & (Value - 20)
-            ElseIf Value = 20 Then
-                Return 0
-            Else
-                Return Value - 20
-            End If
-        End Function
         SliderBackgroundOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
         SliderBackgroundBlur.GetHintText = Function(v) v & " 像素"
     End Sub

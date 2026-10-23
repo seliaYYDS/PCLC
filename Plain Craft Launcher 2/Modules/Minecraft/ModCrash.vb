@@ -862,8 +862,20 @@ NextStack:
         '弹窗提示
         FrmMain.ShowWindowToTop()
         Dim Detail As String = GetAnalyzeResult(IsManualAnalyze)
+        Dim AgentOn As Boolean = Settings.Get(Of Boolean)("AgentEnabled") AndAlso FrmMain IsNot Nothing AndAlso FrmMain.FrmAgent IsNot Nothing
+        Dim AskAgent As Action = Nothing
+        If AgentOn Then
+            AskAgent = Sub()
+                           Try
+                               FrmMain.FrmAgent.AskAboutError(Detail)
+                           Catch ex As Exception
+                               Logger.Warn(ex, "把崩溃信息交给 AI 处理失败")
+                           End Try
+                       End Sub
+        End If
         Select Case MyMsgBox(Detail, If(IsManualAnalyze, "错误报告分析结果", "Minecraft 出现错误"),
             "确定", If(IsManualAnalyze OrElse DirectFile Is Nothing, "", "查看输出"), If(IsManualAnalyze, "", "导出错误报告"),
+            Button4:=If(AgentOn, "小瑟救我qwq", ""), Button4Action:=AskAgent,
             Button2Action:=If(IsManualAnalyze OrElse DirectFile Is Nothing, Nothing,
             Sub()
                 '弹窗选择：查看输出

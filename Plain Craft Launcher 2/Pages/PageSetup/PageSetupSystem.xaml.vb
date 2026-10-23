@@ -6,12 +6,6 @@ Public Class PageSetupSystem
         '重复加载部分
         PanBack.ScrollToHome()
 
-        If BuildType = BuildTypes.Release Then
-            PanDonate.Visibility = Visibility.Collapsed
-        Else
-            PanDonate.Visibility = Visibility.Visible
-            ItemSystemUpdateDownload.Content = "在有新版本时自动下载（更新快照版前需要先输入土豆码）"
-        End If
 
         '非重复加载部分
         Static IsLoaded As Boolean = False
@@ -65,14 +59,6 @@ Public Class PageSetupSystem
         End If
     End Sub
 
-    '识别码/土豆码替代入口
-    Private Sub BtnSystemIdentify_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnSystemIdentify.Click
-        PageOtherAbout.CopyIdentify()
-    End Sub
-    Private Sub BtnSystemUnlock_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnSystemUnlock.Click
-        InputPotatoCode(False)
-    End Sub
-
     '调试模式
     Private Sub CheckDebugMode_Change() Handles CheckDebugMode.Change
         If AniControlEnabled = 0 Then Hint("部分调试信息将在刷新或启动器重启后切换显示！",, False)
@@ -98,9 +84,6 @@ Public Class PageSetupSystem
                     "除非你在制作服务器整合包，或时常手动更新启动器，否则极度不推荐选择此项！", "警告", "我知道我在做什么", "取消", IsWarn:=True) = 2 Then
             If e.RemovedItems.Count > 0 Then ComboSystemUpdate.SelectedItem = e.RemovedItems(0)
         End If
-    End Sub
-    Private Sub BtnSystemUpdate_Click(sender As Object, e As EventArgs) Handles BtnSystemUpdate.Click
-        UpdateCheckByButton()
     End Sub
     ''' <summary>
     ''' 启动器是否已经是最新版？

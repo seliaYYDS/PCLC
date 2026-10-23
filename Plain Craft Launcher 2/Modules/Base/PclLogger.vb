@@ -24,7 +24,12 @@ Public Class PclLogger
             Case LogBehavior.Toast
                 Hint(BriefText, HintType.Red, False)
             Case LogBehavior.Alert
-                MyMsgBox(DetailText, "错误", IsWarn:=True)
+                Dim AskAgent As Action = Nothing
+                If Settings.Get(Of Boolean)("AgentEnabled") AndAlso FrmMain IsNot Nothing AndAlso FrmMain.FrmAgent IsNot Nothing Then
+                    AskAgent = Sub() FrmMain.FrmAgent.AskAboutError(DetailText)
+                End If
+                MyMsgBox(DetailText, "错误", "确定", "", "", IsWarn:=True,
+                         Button4:=If(AskAgent Is Nothing, "", "小瑟救我qwq"), Button4Action:=AskAgent)
             Case LogBehavior.AlertThenFeedback
                 If PageSetupSystem.IsLauncherNewest Then
                     If MyMsgBox(DetailText & vbCrLf & vbCrLf & "是否反馈此问题？如果不反馈，这个问题可能永远无法得到解决！", "错误", "反馈", "取消", IsWarn:=True) = 1 Then Feedback(False, True)

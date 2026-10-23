@@ -244,21 +244,6 @@ NextInner:
         Dim CheckResult As String = ""
         RunInUiWait(Sub() CheckResult = McLoginAble(McLoginInput()))
         If CheckResult <> "" Then Throw New ArgumentException(CheckResult)
-        '求赞助
-        If BuildType = BuildTypes.Release AndAlso CurrentLaunchOptions?.SaveBatch Is Nothing Then '保存脚本时不提示
-            RunInNewThread(
-            Sub()
-                Select Case Settings.Get(Of Integer)("SystemLaunchCount")
-                    Case 10, 20, 40, 60, 80, 100, 120, 150, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000
-                        If MyMsgBox("PCL 已经为你启动了 " & Settings.Get(Of Integer)("SystemLaunchCount") & " 次游戏啦！" & vbCrLf &
-                                    "如果 PCL 还算好用的话，能不能考虑赞助一下 PCL……" & vbCrLf &
-                                    "如果没有大家的支持，PCL 很难在免费、无任何广告的情况下维持数年的更新（磕头）……！",
-                                    Settings.Get(Of Integer)("SystemLaunchCount") & " 次启动！", "支持 PCL！", "但是我拒绝") = 1 Then
-                            OpenWebsite("https://meloong.com/afd/a/LTCat")
-                        End If
-                End Select
-            End Sub, "Donate")
-        End If
         '正版购买提示
         If CurrentLaunchOptions?.SaveBatch Is Nothing AndAlso '保存脚本时不提示
            Not Settings.Get(Of Boolean)("HintBuy") AndAlso Settings.Get(Of McLoginType)("LoginType") <> McLoginType.Ms Then
@@ -878,37 +863,88 @@ LoginFinish:
         End Try
     End Function
 
-    '微软登录步骤 1，原始登录：获取 DeviceCode 并开启登录网页
+    '微软登录步骤 1，原始登录：打开网页登录，从回调地址中取出授权码并换取令牌
     Private Function MsLoginStep1New(Data As LoaderTask(Of McLoginMs, McLoginResult)) As (OAuthAccessToken As String, OAuthRefreshToken As String)
-        '参考：https://learn.microsoft.com/zh-cn/entra/identity-platform/v2-oauth2-device-code
+        '参考：https://learn.microsoft.com/zh-cn/entra/identity-platform/v2-oauth2-auth-code-flow
+        Dim AuthorizeUrl As String =
+            "https://login.live.com/oauth20_authorize.srf" &
+            "?client_id=" & OAuthClientId &
+            "&response_type=code" &
+            "&redirect_uri=" & StringUtils.FormUrlEscape(MsRedirectUri) &
+            "&scope=" & StringUtils.FormUrlEscape(MsOAuthScope) &
+            "&display=touch&locale=zh_CN"
 
-        '初始请求
 Retry:
         McLaunchLog("开始微软登录步骤 1/6（原始登录）")
-        Dim PrepareJson As JObject = NetRequestByClientRetry("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", HttpMethod.Post,
-            Content:=$"client_id={OAuthClientId}&tenant=/consumers&scope=XboxLive.signin%20offline_access",
-            ContentType:="application/x-www-form-urlencoded", RequireJson:=True).DeserializeJson()
-        McLaunchLog("网页登录地址：" & PrepareJson("verification_uri").ToString)
 
-        '弹窗
-        Dim Converter As New MyMsgBoxConverter With {.Content = PrepareJson, .ForceWait = True, .Type = MyMsgBoxType.Login}
-        WaitingMyMsgBox.Enqueue(Converter)
-        While Converter.Result Is Nothing
-            Thread.Sleep(100)
-        End While
-        If TypeOf Converter.Result Is RestartException Then
-            If MyMsgBox($"请在登录时选择 {vbLQ}其他登录方法{vbRQ}，然后选择 {vbLQ}使用我的密码{vbRQ}。{vbCrLf}如果没有该选项，请选择 {vbLQ}设置密码{vbRQ}，设置完毕后再登录。",
-                "需要使用密码登录", "重新登录", "设置密码", "取消",
-                Button2Action:=Sub() OpenWebsite("https://account.live.com/password/Change")) = 1 Then
-                GoTo Retry
-            Else
+        '先用内嵌浏览器登录，由程序自动截获回调地址中的授权码
+        Dim LoginWindow As MsLoginBrowser = Nothing
+        RunInUiWait(Sub()
+                        LoginWindow = New MsLoginBrowser(AuthorizeUrl)
+                        LoginWindow.Owner = FrmMain
+                        LoginWindow.ShowDialog()
+                    End Sub)
+        Dim Code As String = If(LoginWindow Is Nothing, Nothing, LoginWindow.Result)
+        If String.IsNullOrWhiteSpace(Code) Then
+            '内嵌浏览器不可用或被玩家关闭，退回到系统浏览器 + 手动粘贴
+            If MyMsgBox("内嵌登录窗口已关闭。" & vbCrLf & "是否改用系统浏览器登录？该方式需手动复制回调链接。", "微软登录", "使用系统浏览器", "取消") <> 1 Then
                 Throw New OperationCanceledException
             End If
-        ElseIf TypeOf Converter.Result Is Exception Then
-            Throw CType(Converter.Result, Exception)
-        Else
-            Return (Converter.Result(0), Converter.Result(1))
+            OpenWebsite(AuthorizeUrl)
+            Dim Prompt As String = "在打开的网页中登录 Microsoft 帐户。" & vbCrLf &
+                "登录完成后浏览器会显示提示页面，地址以 login.live.com/oauth20_desktop.srf 开头。" & vbCrLf &
+                "该页面会在 3 秒后将地址栏中的 code 参数替换为 removed=true。" & vbCrLf &
+                "需在 3 秒内复制地址栏中的完整链接并粘贴到下方。" & vbCrLf & vbCrLf &
+                "若地址栏已变为 removed=true，需重新打开登录网页。"
+            While String.IsNullOrWhiteSpace(Code)
+                If Data.IsCanceled Then Throw New OperationCanceledException
+                Dim Raw As String = RunInUiWait(Function() MyMsgBoxInput("微软登录", Prompt, HintText:="https://login.live.com/oauth20_desktop.srf?code=M.R3_BAY..."))
+                If Raw Is Nothing Then Throw New OperationCanceledException
+                Code = ParseOAuthCode(Raw)
+                If String.IsNullOrWhiteSpace(Code) Then
+                    Hint("未找到授权码。需复制浏览器地址栏中的完整链接。", HintType.Red)
+                    OpenWebsite(AuthorizeUrl)
+                End If
+            End While
         End If
+
+        '用授权码换取令牌。授权码是一次性的，必须单次请求，否则并发重发会让其中一个必然失败
+        McLaunchLog($"换取代币：client={OAuthClientId}，redirect={MsRedirectUri}，code 长度={Code.Length}")
+        Dim Result As String
+        Try
+            Result = NetRequestByClient("https://login.live.com/oauth20_token.srf", HttpMethod.Post,
+                Content:=$"client_id={OAuthClientId}&code={StringUtils.FormUrlEscape(Code)}&grant_type=authorization_code&redirect_uri={StringUtils.FormUrlEscape(MsRedirectUri)}&scope={StringUtils.FormUrlEscape(MsOAuthScope)}",
+                ContentType:="application/x-www-form-urlencoded",
+                Headers:={{"Accept-Language", "en-US,en;q=0.5"}, {"X-Requested-With", "XMLHttpRequest"}},
+                Timeout:=30000, RequireJson:=True)
+        Catch ex As HttpRequestCodeException
+            McLaunchLog("换取代币失败：" & ex.Response)
+            If ex.Response.ContainsIgnoreCase("invalid_grant") OrElse ex.Response.ContainsIgnoreCase("expired") Then
+                Dim Detail As String = If(ex.Response.Length > 300, ex.Response.Substring(0, 300) & "……", ex.Response)
+                MyMsgBox("授权码已失效，需重新登录。" & vbCrLf & vbCrLf & "服务器返回：" & Detail, "微软登录", IsWarn:=True)
+                GoTo Retry
+            End If
+            Throw
+        End Try
+
+        Dim ResultJson As JObject = Result.DeserializeJson()
+        If ResultJson("access_token") Is Nothing OrElse ResultJson("refresh_token") Is Nothing Then Throw New Exception("$微软登录失败：服务器未返回令牌。")
+        Return (ResultJson("access_token").ToString, ResultJson("refresh_token").ToString)
+    End Function
+    '从粘贴的链接（或纯授权码）中提取 code 参数
+    Friend Function ParseOAuthCode(Raw As String) As String
+        If String.IsNullOrWhiteSpace(Raw) Then Return Nothing
+        Dim Text As String = Raw.Trim()
+        Dim Index As Integer = Text.IndexOf("code=", StringComparison.OrdinalIgnoreCase)
+        If Index >= 0 Then
+            Text = Text.Substring(Index + 5)
+        ElseIf Text.Contains(" ") OrElse Text.Contains(vbCr) OrElse Text.Contains(vbLf) OrElse Text.Contains("://") OrElse Text.Contains("?") Then
+            '既不是链接里的 code 参数，也不像纯授权码，直接判为无效，避免把整条链接当成 code 发出去
+            Return Nothing
+        End If
+        Dim EndIndex As Integer = Text.IndexOfAny({"&"c, " "c, vbCr, vbLf, """"c, ">"c})
+        If EndIndex >= 0 Then Text = Text.Substring(0, EndIndex)
+        Return Uri.UnescapeDataString(Text).Trim()
     End Function
     '微软登录步骤 1，刷新登录：从 OAuth Code 或 OAuth RefreshToken 获取 {OAuth AccessToken, OAuth RefreshToken}
     Private Function MsLoginStep1Refresh(Code As String) As (OAuthAccessToken As String, OAuthRefreshToken As String)
@@ -916,15 +952,19 @@ Retry:
 
         Dim Result As String
         Try
-            Result = NetRequestByClientMultiple("https://login.live.com/oauth20_token.srf", HttpMethod.Post,
-                Content:=$"client_id={OAuthClientId}&refresh_token={StringUtils.FormUrlEscape(Code)}&grant_type=refresh_token&scope=XboxLive.signin%20offline_access",
-                ContentType:="application/x-www-form-urlencoded",
-                Headers:={{"Accept-Language", "en-US,en;q=0.5"}, {"X-Requested-With", "XMLHttpRequest"}},
-                ThreadCount:=2)
+            '默认的 Live 应用走 live.com 端点刷新；若换成自行注册的 v2 应用，则回退到 v2 端点
+            Try
+                Result = RefreshTokenRequest("https://login.live.com/oauth20_token.srf", Code, MsOAuthScope)
+            Catch exV1 As HttpRequestCodeException
+                If exV1.Response.ContainsIgnoreCase("invalid_grant") OrElse exV1.Response.ContainsIgnoreCase("expired") Then Return ("Relogin", "")
+                Logger.Warn(exV1, "旧版令牌端点刷新失败，回退到 v2 端点")
+                Result = RefreshTokenRequest("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", Code, "XboxLive.signin offline_access")
+            End Try
         Catch ex As HttpRequestCodeException
             '修改错误列表时，同时检查 MyMsgLogin.xaml.vb 中的对应代码
             Dim Response = ex.Response
-            If Response.ContainsIgnoreCase("must sign in again") OrElse Response.ContainsIgnoreCase("password expired") OrElse
+            If Response.ContainsIgnoreCase("invalid_grant") OrElse
+               Response.ContainsIgnoreCase("must sign in again") OrElse Response.ContainsIgnoreCase("password expired") OrElse
                (Response.Contains("refresh_token") AndAlso Response.ContainsIgnoreCase("is not valid")) OrElse '#269
                Response.ContainsIgnoreCase("expired") Then '#8611
                 Return ("Relogin", "")
@@ -944,21 +984,42 @@ Retry:
         Dim RefreshToken As String = ResultJson("refresh_token").ToString
         Return (AccessToken, RefreshToken)
     End Function
+    '向指定的令牌端点发起 refresh_token 请求
+    Private Function RefreshTokenRequest(Url As String, RefreshToken As String, Scope As String) As String
+        '刷新令牌同样会被轮换，并发重发会让其中一个拿到已失效的令牌，因此只能单次请求
+        Return NetRequestByClient(Url, HttpMethod.Post,
+            Content:=$"client_id={OAuthClientId}&refresh_token={StringUtils.FormUrlEscape(RefreshToken)}&grant_type=refresh_token&scope={StringUtils.FormUrlEscape(Scope)}",
+            ContentType:="application/x-www-form-urlencoded",
+            Headers:={{"Accept-Language", "en-US,en;q=0.5"}, {"X-Requested-With", "XMLHttpRequest"}},
+            Timeout:=30000, RequireJson:=True)
+    End Function
     '微软登录步骤 2：从 OAuth AccessToken 获取 XBLToken
     Private Function MsLoginStep2(AccessToken As String) As String
         McLaunchLog("开始微软登录步骤 2/6")
 
-        Dim Request As String = "{
-           ""Properties"": {
-               ""AuthMethod"": ""RPS"",
-               ""SiteName"": ""user.auth.xboxlive.com"",
-               ""RpsTicket"": """ & If(AccessToken.StartsWithF("d="), "", "d=") & AccessToken & """
-           },
-           ""RelyingParty"": ""http://auth.xboxlive.com"",
-           ""TokenType"": ""JWT""
-        }"
-        Return NetRequestByClientMultiple("https://user.auth.xboxlive.com/user/authenticate", HttpMethod.Post,
-            Content:=Request, ContentType:="application/json", RequireJson:=True).DeserializeJson()("Token").ToString
+        'Live 版的令牌直接用作用户票据，v2 版的令牌需要加 d= 前缀，这里两种都试一次
+        Dim Tickets As String() = If(AccessToken.StartsWithF("d="), {AccessToken}, {AccessToken, "d=" & AccessToken})
+        Dim LastException As Exception = Nothing
+        For Each Ticket As String In Tickets
+            Dim Request As String = "{
+               ""Properties"": {
+                   ""AuthMethod"": ""RPS"",
+                   ""SiteName"": ""user.auth.xboxlive.com"",
+                   ""RpsTicket"": """ & Ticket & """
+               },
+               ""RelyingParty"": ""http://auth.xboxlive.com"",
+               ""TokenType"": ""JWT""
+            }"
+            Try
+                Return NetRequestByClientMultiple("https://user.auth.xboxlive.com/user/authenticate", HttpMethod.Post,
+                    Content:=Request, ContentType:="application/json", RequireJson:=True).DeserializeJson()("Token").ToString
+            Catch ex As HttpRequestCodeException
+                LastException = ex
+                If ex.StatusCode <> HttpStatusCode.Unauthorized Then Throw
+                McLaunchLog("Xbox 用户认证返回 401，改用另一种 RpsTicket 格式重试")
+            End Try
+        Next
+        Throw LastException
     End Function
     '微软登录步骤 3：从 XBLToken 获取 {XSTSToken, UHS}
     Private Function MsLoginStep3(XBLToken As String) As (XSTSToken As String, UHS As String)

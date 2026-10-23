@@ -1,3 +1,6 @@
+Imports System.Windows.Data
+Imports System.Windows.Media.Animation
+Imports System.Windows.Threading
 Imports System.ComponentModel
 Imports System.Windows.Interop
 
@@ -351,7 +354,13 @@ Public Class FormMain
         Handle = New WindowInteropHelper(Me).Handle
         '读取设置
         UpdateBackgroundAndTitleBar()
+        ApplyWindowRadius()
+        ApplyTitleBarLayout()
         PageSetupUI.HiddenRefresh()
+        UpdateTitleSelectPill(False)
+        AddHandler PanTitleSelectHost.SizeChanged, Sub() UpdateTitleSelectPill(False)
+        AddHandler PanTitleSelect.SizeChanged, Sub() UpdateTitleSelectPill(False)
+        Dispatcher.BeginInvoke(New Action(Sub() UpdateTitleSelectPill(False)))
         PageSetupUI.BackgroundRefresh(False, True)
         MusicRefreshPlay(False, True)
         '扩展按钮
@@ -447,10 +456,6 @@ Public Class FormMain
             End Try
             '上报
             Telemetry("启动")
-            '开源版本提示
-            If VersionBranchMain = "OpenSource" Then
-                MyMsgBox($"该版本中无法使用以下特性：{vbCrLf}- CurseForge API 调用：需要自行申请 API Key，然后添加到 ModSecret.vb 的开头{vbCrLf}- 正版登录：需要自行向微软申请 Client ID，然后添加到 ModSecret.vb 的开头{vbCrLf}- 更新与联网通知：避免滥用隐患{vbCrLf}- 主题切换：这是需要赞助解锁的纪念性质的功能，别让赞助者太伤心啦……{vbCrLf}- 百宝箱：开发早期往里面塞了些开发工具，整理起来太麻烦了……", "开源版本说明")
-            End If
         End Sub, "初始化", ThreadPriority.Lowest)
 
         Logger.Info($"第三阶段加载用时：{GetTimeMs() - ApplicationStartTick} ms")
@@ -459,12 +464,6 @@ Public Class FormMain
     Private Sub RunCountSub()
         Settings.Set("SystemCount", Settings.Get(Of Integer)("SystemCount") + 1)
         If BuildType = BuildTypes.Snapshot Then
-            Select Case Settings.Get(Of Integer)("SystemCount")
-                Case 1
-                    MyMsgBox("欢迎使用 PCL 快照版！" & vbCrLf &
-                             "快照版包含尚未在正式版发布的测试性功能，仅用于赞助者本人尝鲜。所以请不要发给其他人或者用于制作整合包哦！" & vbCrLf &
-                             "如果你并非通过赞助或赞助者本人邀请进群获得的本程序，那么可能是有人在违规传播，记得提醒他一下啦。", "快照版使用说明")
-            End Select
             If Settings.Get(Of Integer)("SystemCount") >= 99 Then
                 If ThemeUnlock(6, False) Then
                     MyMsgBox("你已经使用了 99 次 PCL 啦，感谢你长期以来的支持！" & vbCrLf &
@@ -658,7 +657,7 @@ Public Class FormMain
         RectForm.Rect = New Rect(0, 0, BorderForm.ActualWidth, BorderForm.ActualHeight)
         PanForm.Width = BorderForm.ActualWidth + 0.001
         PanForm.Height = BorderForm.ActualHeight + 0.001
-        PanMain.Width = PanForm.Width
+        PanMain.Width = PanForm.Width - SideOffset
         PanMain.Height = Math.Max(0, PanForm.Height - PanTitle.ActualHeight)
         If WindowState = WindowState.Maximized Then WindowState = WindowState.Normal '修复 #1938
     End Sub
@@ -673,10 +672,351 @@ Public Class FormMain
         If FrmMain Is Nothing OrElse Not FrmMain.IsLoaded Then Return
         FrmMain.UpdateBackgroundAndTitleBar()
     End Sub
+    ''' <summary>
+    ''' 按设置应用主窗口圆角。
+    ''' </summary>
+    ''' <summary>当前是否正在用视频作为背景。</summary>
+    Public IsVideoBackground As Boolean = False
+
+    ''' <summary>以视频作为背景播放（静音循环）。</summary>
+    Public Sub PlayVideoBackground(Path As String)
+        Try
+            StopVideoBackground()
+            MediaBack.Source = New Uri(Path)
+            MediaBack.Visibility = Visibility.Visible
+            MediaBack.Position = TimeSpan.Zero
+            MediaBack.Play()
+            IsVideoBackground = True
+            ApplyVideoLayout()
+        Catch ex As Exception
+            Logger.Error(ex, $"加载背景视频失败（{Path}）")
+            StopVideoBackground()
+        End Try
+    End Sub
+
+    ''' <summary>停止并卸载背景视频。</summary>
+    Public Sub StopVideoBackground()
+        Try
+            MediaBack.Stop()
+            MediaBack.Source = Nothing
+        Catch
+        End Try
+        MediaBack.Visibility = Visibility.Collapsed
+        IsVideoBackground = False
+    End Sub
+
+    '循环播放
+    Private Sub MediaBack_MediaEnded(sender As Object, e As RoutedEventArgs) Handles MediaBack.MediaEnded
+        If Not IsVideoBackground Then Return
+        MediaBack.Position = TimeSpan.Zero
+        MediaBack.Play()
+    End Sub
+    Private Sub MediaBack_MediaFailed(sender As Object, e As ExceptionRoutedEventArgs) Handles MediaBack.MediaFailed
+        Logger.Warn($"背景视频播放失败：{If(e.ErrorException?.Message, "未知错误")}")
+        StopVideoBackground()
+    End Sub
+
+    '最小化时暂停，避免空耗性能
+    Private Sub FormMain_StateChanged(sender As Object, e As EventArgs) Handles Me.StateChanged
+        If Not IsVideoBackground Then Return
+        If WindowState = WindowState.Minimized Then
+            MediaBack.Pause()
+        Else
+            MediaBack.Play()
+        End If
+    End Sub
+
+    ''' <summary>按自适应方式设置视频的拉伸与对齐。</summary>
+    Public Sub ApplyVideoLayout()
+        Dim Suit As Integer = Settings.Get(Of Integer)("UiBackgroundSuit")
+        Dim Mode As Stretch = Stretch.UniformToFill
+        Dim Horizontal As HorizontalAlignment = HorizontalAlignment.Center
+        Dim Vertical As VerticalAlignment = VerticalAlignment.Center
+        Select Case Suit
+            Case 3 '拉伸
+                Mode = Stretch.Fill
+            Case 1, 2 '居中
+                Mode = Stretch.Uniform
+            Case 5 : Horizontal = HorizontalAlignment.Left : Vertical = VerticalAlignment.Top : Mode = Stretch.Uniform
+            Case 9 : Horizontal = HorizontalAlignment.Left : Mode = Stretch.Uniform
+            Case 7 : Horizontal = HorizontalAlignment.Left : Vertical = VerticalAlignment.Bottom : Mode = Stretch.Uniform
+            Case 11 : Vertical = VerticalAlignment.Top : Mode = Stretch.Uniform
+            Case 12 : Vertical = VerticalAlignment.Bottom : Mode = Stretch.Uniform
+            Case 6 : Horizontal = HorizontalAlignment.Right : Vertical = VerticalAlignment.Top : Mode = Stretch.Uniform
+            Case 10 : Horizontal = HorizontalAlignment.Right : Mode = Stretch.Uniform
+            Case 8 : Horizontal = HorizontalAlignment.Right : Vertical = VerticalAlignment.Bottom : Mode = Stretch.Uniform
+            Case 4 '平铺不支持，退回填满
+                Mode = Stretch.UniformToFill
+        End Select
+        MediaBack.Stretch = Mode
+        MediaBack.HorizontalAlignment = Horizontal
+        MediaBack.VerticalAlignment = Vertical
+    End Sub
+    ''' <summary>
+    ''' 按设置应用主窗口圆角。
+    ''' </summary>
+    ''' <summary>按设置把顶部栏放到顶部、左侧、右侧或底部。</summary>
+    Public Shared Sub ApplyTitleBarPosition()
+        Try
+            If FrmMain Is Nothing OrElse FrmMain.PanForm Is Nothing Then Return
+            FrmMain.ApplyTitleBarLayout()
+        Catch ex As Exception
+            Logger.Warn(ex, "应用顶部栏位置失败")
+        End Try
+    End Sub
+
+    '侧边标题栏：独立容器，左右模式下把导航与窗口按钮搬进去
+    Public SideOffset As Double = 0
+    Private SideBar As Grid
+    Private SideBarDragging As Boolean = False
+
+    Private Sub PanTitle_MouseEnter(sender As Object, e As MouseEventArgs) Handles PanTitle.MouseEnter
+        SetSideBarExpanded(True)
+    End Sub
+    Private Sub PanTitle_MouseLeave(sender As Object, e As MouseEventArgs) Handles PanTitle.MouseLeave
+        SetSideBarExpanded(False)
+    End Sub
+
+    ''' <summary>展开或收起侧边标题栏。</summary>
+    Private Sub SetSideBarExpanded(Expanded As Boolean)
+        Try
+            If SideBar Is Nothing Then Return
+            If Not Expanded AndAlso SideBarDragging Then Return
+            ApplyNavButtonStyle(True, Expanded)
+            ApplyNavButtonText(Expanded)
+            Dim TargetWidth As Double = If(Expanded, 132, 56)
+            If Math.Abs(SideBar.ActualWidth - TargetWidth) < 0.5 Then Return
+            Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseOut}
+            SideBar.BeginAnimation(FrameworkElement.WidthProperty, New DoubleAnimation(TargetWidth, New Duration(TimeSpan.FromMilliseconds(180))) With {.EasingFunction = Ease})
+            Dim RefreshTimer As New DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(220)}
+            AddHandler RefreshTimer.Tick,
+                Sub(sender, args)
+                    RefreshTimer.Stop()
+                    UpdateTitleSelectPill(False)
+                End Sub
+            RefreshTimer.Start()
+        Catch ex As Exception
+            Logger.Warn(ex, "展开侧边标题栏失败")
+        End Try
+    End Sub
+
+    '侧边标题栏拖动窗口
+    Private Sub SideBar_MouseDown(sender As Object, e As MouseButtonEventArgs)
+        Try
+            Dim Source As DependencyObject = TryCast(e.OriginalSource, DependencyObject)
+            While Source IsNot Nothing
+                If TypeOf Source Is MyRadioButton OrElse TypeOf Source Is MyIconButton Then Return
+                Source = VisualTreeHelper.GetParent(Source)
+            End While
+            If e.ButtonState = MouseButtonState.Pressed Then
+                SideBarDragging = True
+                DragMove()
+                SideBarDragging = False
+            End If
+        Catch
+        End Try
+    End Sub
+    ''' <summary>统一导航按钮的横向/竖向样式。</summary>
+    Private Sub ApplyNavButtonStyle(Vertical As Boolean, Optional Expanded As Boolean = True)
+        Dim IsRight As Boolean = Settings.Get(Of Integer)("UiTitleBarPosition") = 2
+        For Each Child In PanTitleSelect.Children
+            Dim Item = TryCast(Child, MyRadioButton)
+            If Item Is Nothing Then Continue For
+            If Vertical Then
+                Item.Width = 132
+                Item.SetLogoOnly(True)
+                Item.HorizontalAlignment = If(IsRight, HorizontalAlignment.Right, HorizontalAlignment.Left)
+                Item.Margin = New Thickness(0, 7, 0, 7)
+            Else
+                Item.Width = Double.NaN
+                Item.SetLogoOnly(False)
+                Item.HorizontalAlignment = HorizontalAlignment.Center
+                Item.Margin = New Thickness(5, 0, 5, 0)
+            End If
+        Next
+    End Sub
+    Private Sub ApplyNavButtonText(Show As Boolean)
+        For Each Child In PanTitleSelect.Children
+            Dim Item = TryCast(Child, MyRadioButton)
+            If Item IsNot Nothing Then Item.ShowText = Show
+        Next
+    End Sub
+
+    ''' <summary>把导航栏与窗口按钮放回普通标题栏。</summary>
+    Private Sub RestoreTitleBarChildren()
+        If PanTitleSelectHost IsNot Nothing AndAlso PanTitleSelectHost.Parent IsNot PanTitleMain Then
+            CType(PanTitleSelectHost.Parent, Panel).Children.Remove(PanTitleSelectHost)
+            PanTitleMain.Children.Add(PanTitleSelectHost)
+            Grid.SetColumn(PanTitleSelectHost, 1)
+        End If
+        If BtnTitleMin.Parent IsNot PanTitle Then
+            CType(BtnTitleMin.Parent, Panel).Children.Remove(BtnTitleMin)
+            PanTitle.Children.Add(BtnTitleMin)
+        End If
+        If BtnTitleClose.Parent IsNot PanTitle Then
+            CType(BtnTitleClose.Parent, Panel).Children.Remove(BtnTitleClose)
+            PanTitle.Children.Add(BtnTitleClose)
+        End If
+    End Sub
+
+    ''' <summary>主题或标题栏样式变化后，刷新侧边标题栏的背景。</summary>
+    Public Sub RefreshSideBarBackground()
+        If SideBar Is Nothing Then Return
+        SideBar.Background = MakeVerticalTitleBrush()
+    End Sub
+
+    '把横向的标题栏渐变转成纵向，供侧边栏使用
+    Private Shared Function MakeVerticalTitleBrush() As Brush
+        Try
+            If FrmMain Is Nothing OrElse FrmMain.PanTitle Is Nothing Then Return Nothing
+            Dim Source = TryCast(FrmMain.PanTitle.Background, LinearGradientBrush)
+            If Source IsNot Nothing AndAlso Source.GradientStops.Count >= 2 Then
+                Return New LinearGradientBrush(Source.GradientStops(0).Color, Source.GradientStops(Source.GradientStops.Count - 1).Color, New Point(0, 0), New Point(0, 1))
+            End If
+            Return FrmMain.PanTitle.Background
+        Catch
+            Return Nothing
+        End Try
+    End Function
+    ''' <summary>实际的布局切换。</summary>
+    ''' <summary>按设置刷新 AI 助手显示状态。</summary>
+    Public Shared Sub RefreshAgentState()
+        If FrmMain Is Nothing OrElse FrmMain.FrmAgent Is Nothing Then Return
+        FrmMain.FrmAgent.RefreshState()
+    End Sub
+    Public Sub ApplyTitleBarLayout()
+        Try
+            Dim Position As Integer = Settings.Get(Of Integer)("UiTitleBarPosition")
+            Dim Vertical As Boolean = Position = 1 OrElse Position = 2
+            If SideBar IsNot Nothing Then
+                RestoreTitleBarChildren()
+                PanForm.Children.Remove(SideBar)
+                SideBar = Nothing
+            End If
+            PanTitle.Visibility = Visibility.Visible
+            PanForm.RowDefinitions.Clear()
+            PanForm.ColumnDefinitions.Clear()
+            If Not Vertical Then
+                PanForm.RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
+                PanForm.RowDefinitions.Add(New RowDefinition With {.Height = New GridLength(1, GridUnitType.Star)})
+                PanForm.ColumnDefinitions.Add(New ColumnDefinition With {.Width = New GridLength(1, GridUnitType.Star)})
+                Dim TitleRow As Integer = If(Position = 3, 1, 0)
+                Dim ContentRow As Integer = If(Position = 3, 0, 1)
+                For Each Child As UIElement In PanForm.Children
+                    If Child Is PanTitle OrElse Child Is FrmAgent Then Continue For
+                    Grid.SetRow(Child, ContentRow)
+                    Grid.SetColumn(Child, 0)
+                    Dim Element = TryCast(Child, FrameworkElement)
+                    If Element IsNot Nothing Then Element.Margin = New Thickness(0)
+                Next
+                Grid.SetRow(PanTitle, TitleRow)
+                Grid.SetColumn(PanTitle, 0)
+                PanTitle.Height = 48
+                PanTitle.Width = Double.NaN
+                PanTitle.HorizontalAlignment = HorizontalAlignment.Stretch
+                PanTitle.VerticalAlignment = VerticalAlignment.Stretch
+                Panel.SetZIndex(PanTitle, 0)
+                SideOffset = 0
+                PanMain.Margin = New Thickness(0)
+                PanMain.Width = PanForm.ActualWidth
+                PanTitleSelectHost.Width = Double.NaN
+                PanTitleSelectHost.Height = 27
+                PanTitleSelectHost.Margin = New Thickness(13, 0, 13, 0)
+                PanTitleSelectHost.HorizontalAlignment = HorizontalAlignment.Left
+                PanTitleSelectHost.VerticalAlignment = VerticalAlignment.Center
+                PanTitleSelect.Orientation = Orientation.Horizontal
+                PanTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
+                ApplyNavButtonStyle(False)
+                ApplyNavButtonText(True)
+                BtnTitleMin.HorizontalAlignment = HorizontalAlignment.Right
+                BtnTitleMin.VerticalAlignment = VerticalAlignment.Center
+                BtnTitleMin.Margin = New Thickness(0, 0, 44, 0)
+                BtnTitleClose.HorizontalAlignment = HorizontalAlignment.Right
+                BtnTitleClose.VerticalAlignment = VerticalAlignment.Center
+                BtnTitleClose.Margin = New Thickness(0, 0, 12, 0)
+                RectTitleSelect.VerticalAlignment = VerticalAlignment.Center
+                RectTitleSelect.CornerRadius = New CornerRadius(13.5)
+                RectTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
+            Else
+                PanForm.RowDefinitions.Add(New RowDefinition With {.Height = New GridLength(1, GridUnitType.Star)})
+                PanForm.ColumnDefinitions.Add(New ColumnDefinition With {.Width = New GridLength(1, GridUnitType.Star)})
+                For Each Child As UIElement In PanForm.Children
+                    If Child Is PanTitle OrElse Child Is ImgBack OrElse Child Is MediaBack Then Continue For
+                    Grid.SetRow(Child, 0)
+                    Grid.SetColumn(Child, 0)
+                    Dim Element = TryCast(Child, FrameworkElement)
+                    If Element IsNot Nothing Then
+                        Element.Margin = New Thickness(0)
+                        Element.ClearValue(FrameworkElement.HeightProperty)
+                        Element.VerticalAlignment = VerticalAlignment.Stretch
+                    End If
+                Next
+                SideOffset = 56
+                If PanLeft IsNot Nothing Then PanLeft.Margin = If(Position = 1, New Thickness(56, 0, 0, 0), New Thickness(0))
+                PanMain.Margin = If(Position = 1, New Thickness(56, 0, 0, 0), New Thickness(0))
+                PanMain.Width = Math.Max(0, PanForm.ActualWidth - SideOffset)
+                '构造侧边标题栏
+                SideBar = New Grid With {
+                    .Width = 56,
+                    .VerticalAlignment = VerticalAlignment.Stretch,
+                    .HorizontalAlignment = If(Position = 1, HorizontalAlignment.Left, HorizontalAlignment.Right),
+                    .ClipToBounds = True,
+                    .Background = MakeVerticalTitleBrush()}
+                Panel.SetZIndex(SideBar, 200)
+                Grid.SetRow(SideBar, 0)
+                Grid.SetColumn(SideBar, 0)
+                AddHandler SideBar.MouseEnter, Sub(sender, args) SetSideBarExpanded(True)
+                AddHandler SideBar.SizeChanged, Sub(sender, args) UpdateTitleSelectPill(False)
+                AddHandler SideBar.MouseLeave, Sub(sender, args) SetSideBarExpanded(False)
+                AddHandler SideBar.MouseLeftButtonDown, AddressOf SideBar_MouseDown
+                PanForm.Children.Add(SideBar)
+                '搬移控件
+                PanTitleMain.Children.Remove(PanTitleSelectHost)
+                PanTitle.Children.Remove(BtnTitleMin)
+                PanTitle.Children.Remove(BtnTitleClose)
+                PanTitleSelectHost.Width = 132
+                PanTitleSelectHost.Height = Double.NaN
+                PanTitleSelectHost.Margin = New Thickness(0, 12, 0, 0)
+                PanTitleSelectHost.HorizontalAlignment = HorizontalAlignment.Left
+                PanTitleSelectHost.VerticalAlignment = VerticalAlignment.Top
+                PanTitleSelect.Orientation = Orientation.Vertical
+                PanTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
+                ApplyNavButtonStyle(True, False)
+                ApplyNavButtonText(False)
+                SideBar.Children.Add(PanTitleSelectHost)
+                BtnTitleMin.HorizontalAlignment = HorizontalAlignment.Center
+                BtnTitleMin.VerticalAlignment = VerticalAlignment.Bottom
+                BtnTitleMin.Margin = New Thickness(0, 0, 0, 46)
+                BtnTitleClose.HorizontalAlignment = HorizontalAlignment.Center
+                BtnTitleClose.VerticalAlignment = VerticalAlignment.Bottom
+                BtnTitleClose.Margin = New Thickness(0, 0, 0, 10)
+                SideBar.Children.Add(BtnTitleMin)
+                SideBar.Children.Add(BtnTitleClose)
+                PanTitle.Visibility = Visibility.Collapsed
+                RectTitleSelect.VerticalAlignment = VerticalAlignment.Top
+                RectTitleSelect.CornerRadius = New CornerRadius(0)
+                RectTitleSelect.HorizontalAlignment = HorizontalAlignment.Left
+            End If
+            UpdateTitleSelectPill(False)
+        Catch ex As Exception
+            Logger.Error(ex, "切换标题栏位置失败")
+        End Try
+    End Sub
+    Public Shared Sub ApplyWindowRadius()
+        Try
+            If FrmMain Is Nothing Then Return
+            Dim Radius As Double = Math.Max(0, Math.Min(24, Settings.Get(Of Integer)("UiWindowRadius")))
+            FrmMain.RectForm.RadiusX = Radius
+            FrmMain.RectForm.RadiusY = Radius
+        Catch ex As Exception
+            Logger.Warn(ex, "应用窗口圆角失败")
+        End Try
+    End Sub
     Public Sub UpdateBackgroundAndTitleBar()
         Logger.Info("从设置更新背景图片与标题栏样式")
         '背景图片透明度
         ImgBack.Opacity = Settings.Get(Of Integer)("UiBackgroundOpacity") / 1000
+        MediaBack.Opacity = ImgBack.Opacity
         '背景图片模糊
         Dim BlurRadius As Double = Settings.Get(Of Integer)("UiBackgroundBlur") + 1
         If BlurRadius = 1 Then
@@ -685,6 +1025,13 @@ Public Class FormMain
             ImgBack.Effect = New Effects.BlurEffect With {.Radius = BlurRadius}
         End If
         ImgBack.Margin = New Thickness(-BlurRadius / 1.8)
+        '视频背景同样应用模糊设置
+        If BlurRadius = 1 Then
+            MediaBack.Effect = Nothing
+        Else
+            MediaBack.Effect = New Effects.BlurEffect With {.Radius = BlurRadius}
+        End If
+        If IsVideoBackground Then ApplyVideoLayout()
         '背景图片适应方式
         Dim BackgroundType As Integer = Settings.Get(Of Integer)("UiBackgroundSuit")
         If ImgBack.Background IsNot Nothing Then
@@ -1238,6 +1585,7 @@ Public Class FormMain
         SetupLink = 1
         SetupUI = 2
         SetupSystem = 3
+        SetupAgent = 4
         LinkMain = 0
         OtherHelp = 0
         OtherAbout = 1
@@ -1365,6 +1713,7 @@ Public Class FormMain
             PageChangeExit()
             IsChangingPage = True '防止下面的勾选直接触发了 PageChangeActual
             CType(PanTitleSelect.Children(Stack), MyRadioButton).SetChecked(True, True, PageNameGet(PageCurrent) = "")
+            UpdateTitleSelectPill()
             IsChangingPage = False
             Select Case Stack.Page
                 Case PageType.Download
@@ -1388,12 +1737,67 @@ Public Class FormMain
             PageChangeActual(Stack, SubType)
         End If
     End Sub
+    ''' <summary>把导航栏的白色选中背景移动到当前选中的选项上。</summary>
+    Public Sub UpdateTitleSelectPill(Optional Anime As Boolean = True)
+        Try
+            If RectTitleSelect Is Nothing OrElse PanTitleSelectHost Is Nothing Then Return
+            Dim Target As MyRadioButton = Nothing
+            For Each Child In PanTitleSelect.Children
+                If TypeOf Child Is MyRadioButton AndAlso CType(Child, MyRadioButton).Checked Then Target = CType(Child, MyRadioButton)
+            Next
+            If Target Is Nothing OrElse Target.Visibility <> Visibility.Visible OrElse Target.ActualWidth <= 0 Then
+                RectTitleSelect.BeginAnimation(WidthProperty, Nothing)
+                RectTitleSelect.Width = 0
+                Return
+            End If
+            Dim IsVertical As Boolean = PanTitleSelect.Orientation = Orientation.Vertical
+            Dim Offset As Point = Target.TranslatePoint(New Point(0, 0), PanTitleSelectHost)
+            Dim TargetStart As Double = If(IsVertical, Offset.Y, Offset.X)
+            Dim TargetLength As Double = If(IsVertical, Target.ActualHeight, Target.ActualWidth)
+            If Not Anime OrElse Not IsLoaded Then
+                TransTitleSelect.BeginAnimation(TranslateTransform.XProperty, Nothing)
+                TransTitleSelect.BeginAnimation(TranslateTransform.YProperty, Nothing)
+                RectTitleSelect.BeginAnimation(WidthProperty, Nothing)
+                RectTitleSelect.BeginAnimation(HeightProperty, Nothing)
+                If IsVertical Then
+                    TransTitleSelect.X = 0
+                    TransTitleSelect.Y = TargetStart
+                    RectTitleSelect.Width = If(SideBar Is Nothing, PanTitleSelectHost.ActualWidth, SideBar.ActualWidth)
+                    RectTitleSelect.Height = TargetLength
+                Else
+                    TransTitleSelect.X = TargetStart
+                    TransTitleSelect.Y = 0
+                    RectTitleSelect.Width = TargetLength
+                    RectTitleSelect.Height = 27
+                End If
+                Return
+            End If
+            Dim Duration As New Duration(TimeSpan.FromMilliseconds(170))
+            Dim Ease As New CubicEase With {.EasingMode = EasingMode.EaseInOut}
+            If IsVertical Then
+                RectTitleSelect.BeginAnimation(WidthProperty, Nothing)
+                RectTitleSelect.Width = If(SideBar Is Nothing, PanTitleSelectHost.ActualWidth, SideBar.ActualWidth)
+                TransTitleSelect.BeginAnimation(TranslateTransform.YProperty, New DoubleAnimation(TargetStart, Duration) With {.EasingFunction = Ease})
+                RectTitleSelect.BeginAnimation(HeightProperty, New DoubleAnimation(TargetLength, Duration) With {.EasingFunction = Ease})
+            Else
+                RectTitleSelect.BeginAnimation(HeightProperty, Nothing)
+                RectTitleSelect.Height = 27
+                TransTitleSelect.BeginAnimation(TranslateTransform.XProperty, New DoubleAnimation(TargetStart, Duration) With {.EasingFunction = Ease})
+                RectTitleSelect.BeginAnimation(WidthProperty, New DoubleAnimation(TargetLength, Duration) With {.EasingFunction = Ease})
+            End If
+        Catch ex As Exception
+            Logger.Warn(ex, "更新导航栏选中背景失败")
+        End Try
+    End Sub
+
+
     ''' <summary>
     ''' 通过点击导航栏改变页面。
     ''' </summary>
     Private Sub BtnTitleSelect_Click(sender As MyRadioButton, raiseByMouse As Boolean) Handles BtnTitleSelect0.Check, BtnTitleSelect1.Check, BtnTitleSelect2.Check, BtnTitleSelect3.Check, BtnTitleSelect4.Check
         If IsChangingPage Then Return
         PageChangeActual(Val(sender.Tag))
+        UpdateTitleSelectPill()
     End Sub
     ''' <summary>
     ''' 通过点击返回按钮或手动触发返回来改变页面。
