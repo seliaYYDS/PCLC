@@ -902,8 +902,22 @@ Public Class AgentMascot
         WheelCatcher.Height = Math.Max(0, AreaBottom - Math.Min(Bottom, AreaBottom))
         Canvas.SetLeft(WheelCatcher, BaseX)
         Canvas.SetTop(WheelCatcher, Math.Min(Bottom, AreaBottom))
+        For Each Entry In Entries
+            UpdateScrollBar(Entry)
+            If Entry.StickBottom Then ScrollToBottom(Entry)
+        Next
     End Sub
 
+    Private Shared Sub ScrollToBottom(Entry As BubbleEntry)
+        Try
+            If Entry.Viewer Is Nothing Then Return
+            Entry.Viewer.UpdateLayout()
+            If Entry.Viewer.ScrollableHeight <= 0 Then Return
+            Entry.Viewer.ScrollToVerticalOffset(Entry.Viewer.ScrollableHeight)
+            Entry.LastAppliedOffset = Entry.Viewer.VerticalOffset
+        Catch
+        End Try
+    End Sub
     Private Sub UpdateScrollBar(Entry As BubbleEntry)
         Try
             If Entry.Thumb Is Nothing OrElse Entry.Track Is Nothing OrElse Entry.Viewer Is Nothing Then Return
@@ -1102,6 +1116,7 @@ Public Class AgentMascot
                            Try
                                RenderEntry(Reply)
                                RequestLayout()
+                               If Reply.StickBottom Then ScrollToBottom(Reply)
                            Catch ex As Exception
                                Logger.Warn(ex, "AI 消息渲染失败（已忽略，不影响继续输出）")
                            End Try
@@ -1130,6 +1145,7 @@ Public Class AgentMascot
                            Try
                                RenderEntry(Reply)
                                LayoutMessages()
+                               ScrollToBottom(Reply)
                            Catch ex As Exception
                                Logger.Warn(ex, "AI 结束渲染失败")
                            End Try
