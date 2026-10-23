@@ -251,7 +251,6 @@ Public Class AgentMascot
         PanMessageLayer.Height = Math.Max(0, ActualHeight)
         If Entries.Count = 0 Then
             RenderHistory()
-            If Entries.Count = 0 Then AddBubble("你好，我是小瑟。可以帮你安装版本、排查问题，也可以直接聊天。", False)
         End If
         LayoutMessages()
         StartFollow()
@@ -309,22 +308,14 @@ Public Class AgentMascot
             Return
         End If
         If Entry.Raw.Length = 0 Then
-            Entry.Host.Children.Add(New TextBlock With {
-                .Text = "思考中…",
-                .FontSize = 12,
-                .Foreground = New MyColor(150, 155, 170),
-                .Margin = New Thickness(0, 1, 0, 1)})
+            Entry.Host.Children.Add(BuildHintText("思考中…", 12))
         Else
             For Each Block In ParseMarkdown(Entry.Raw.ToString())
                 Entry.Host.Children.Add(Block)
             Next
         End If
         For Each Note In Entry.Notes
-            Entry.Host.Children.Add(New TextBlock With {
-                .Text = Note,
-                .FontSize = 11,
-                .Foreground = New MyColor(150, 155, 170),
-                .Margin = New Thickness(0, 3, 0, 0)})
+            Entry.Host.Children.Add(BuildHintText(Note, 11))
         Next
     End Sub
 
@@ -350,24 +341,48 @@ Public Class AgentMascot
             If String.IsNullOrWhiteSpace(Line) Then Continue For
             Dim Trimmed As String = Line.TrimStart()
             Dim Indent As Double = Line.Length - Trimmed.Length
+            If Trimmed = "---" OrElse Trimmed = "***" Then
+                Result.Add(New Border With {.Height = 1, .Background = New MyColor(226, 229, 238), .Margin = New Thickness(0, 6, 0, 6)})
+                Continue For
+            End If
+            If Trimmed.StartsWith("|") Then
+                Dim Stripped As String = Trimmed.Replace("|", "").Replace("-", "").Trim()
+                If Stripped.Length = 0 Then Continue For
+                Dim Cells = Trimmed.Trim("|"c).Split("|"c)
+                Dim Row As New TextBlock With {
+                    .Text = String.Join("   ", Array.ConvertAll(Cells, Function(C) C.Trim())),
+                    .FontSize = 12,
+                    .Foreground = New MyColor(70, 74, 90),
+                    .TextWrapping = TextWrapping.Wrap,
+                    .Margin = New Thickness(0, 1, 0, 1)}
+                Result.Add(Row)
+                Continue For
+            End If
             Dim Paragraph As New TextBlock With {
                 .TextWrapping = TextWrapping.Wrap,
                 .FontSize = 13,
                 .LineHeight = 20,
                 .Foreground = New MyColor(51, 51, 51),
                 .Margin = New Thickness(Math.Min(Indent * 4, 16), 1, 0, 1)}
-            If Trimmed.StartsWith("#") Then
+            If Trimmed.StartsWith(">") Then
+                Paragraph.Foreground = New MyColor(110, 116, 135)
+                Paragraph.Padding = New Thickness(8, 0, 0, 0)
+                AddInline(Paragraph, Trimmed.TrimStart(">"c).Trim())
+            ElseIf Trimmed.StartsWith("#") Then
                 Dim Level As Integer = 0
                 While Level < Trimmed.Length AndAlso Trimmed(Level) = "#"c
                     Level += 1
                 End While
-                Paragraph.FontSize = If(Level <= 1, 15, 14)
+                Paragraph.FontSize = If(Level <= 1, 16, 14.5)
                 Paragraph.FontWeight = FontWeights.SemiBold
-                Paragraph.Margin = New Thickness(0, 4, 0, 2)
+                Paragraph.Margin = New Thickness(0, 5, 0, 2)
                 AddInline(Paragraph, Trimmed.TrimStart("#"c).Trim())
             ElseIf Trimmed.StartsWith("- ") OrElse Trimmed.StartsWith("* ") Then
                 Paragraph.Margin = New Thickness(4 + Math.Min(Indent * 4, 16), 1, 0, 1)
                 AddInline(Paragraph, "• " & Trimmed.Substring(2))
+            ElseIf Regex.IsMatch(Trimmed, "^\d+\.\s") Then
+                Paragraph.Margin = New Thickness(4 + Math.Min(Indent * 4, 16), 1, 0, 1)
+                AddInline(Paragraph, Trimmed)
             Else
                 AddInline(Paragraph, Trimmed)
             End If
@@ -391,19 +406,55 @@ Public Class AgentMascot
                 .Foreground = New MyColor(60, 64, 80)}}
     End Function
 
+    Private Shared Function BuildHintText(Text As String, Size As Double) As TextBlock
+        Dim Block As New TextBlock With {
+            .Text = Text,
+            .FontSize = Size,
+            .Margin = New Thickness(0, 2, 0, 0),
+            .TextWrapping = TextWrapping.Wrap}
+        Try
+            Dim BaseColor As Color = CType(New MyColor(160, 165, 180), Color)
+            Dim HighColor As Color = CType(New MyColor(85, 95, 135), Color)
+            Dim Brush As New LinearGradientBrush With {.StartPoint = New Point(0, 0), .EndPoint = New Point(1, 0)}
+            Brush.GradientStops.Add(New GradientStop(HighColor, 0))
+            Brush.GradientStops.Add(New GradientStop(BaseColor, 0.35))
+            Brush.GradientStops.Add(New GradientStop(BaseColor, 0.65))
+            Brush.GradientStops.Add(New GradientStop(HighColor, 1))
+            Dim Shift As New TranslateTransform(-1, 0)
+            Brush.RelativeTransform = Shift
+            Block.Foreground = Brush
+            Dim Sweep As New DoubleAnimation(-1, 1, New Duration(TimeSpan.FromSeconds(2.4))) With {
+                .RepeatBehavior = RepeatBehavior.Forever}
+            Shift.BeginAnimation(TranslateTransform.XProperty, Sweep)
+        Catch
+        End Try
+        Return Block
+    End Function
+
     Private Shared Sub AddInline(Target As TextBlock, Text As String)
         Dim Fence As Char = ChrW(96)
-        Dim Pattern As New Regex("(\*\*.+?\*\*|" & Fence & "[^" & Fence & "]+?" & Fence & ")")
+        Dim Pattern As New Regex("(\*\*.+?\*\*|__.+?__|~~.+?~~|\*[^*" & vbLf & "]+?\*|" & Fence & "[^" & Fence & "]+?" & Fence & "|\[[^\]]+\]\([^)]+\))")
         Dim Last As Integer = 0
         For Each M As Match In Pattern.Matches(Text)
             If M.Index > Last Then Target.Inlines.Add(New Run(Text.Substring(Last, M.Index - Last)))
             Dim Piece As String = M.Value
             If Piece.StartsWith("**") Then
                 Target.Inlines.Add(New Bold(New Run(Piece.Substring(2, Piece.Length - 4))))
-            Else
+            ElseIf Piece.StartsWith("__") Then
+                Target.Inlines.Add(New Bold(New Run(Piece.Substring(2, Piece.Length - 4))))
+            ElseIf Piece.StartsWith("~~") Then
+                Target.Inlines.Add(New Run(Piece.Substring(2, Piece.Length - 4)) With {.TextDecorations = TextDecorations.Strikethrough})
+            ElseIf Piece.StartsWith("[") Then
+                Dim Close As Integer = Piece.IndexOf("](")
+                Dim Label As String = Piece.Substring(1, Close - 1)
+                Target.Inlines.Add(New Run(Label) With {.Foreground = New MyColor(70, 100, 200)})
+            ElseIf Piece.StartsWith(Fence) Then
                 Target.Inlines.Add(New Run(Piece.Trim(Fence)) With {
                     .FontFamily = New FontFamily("Consolas"),
                     .Foreground = New MyColor(90, 96, 120)})
+            Else
+                Dim Inner As String = Piece.Trim("*"c)
+                Target.Inlines.Add(New Italic(New Run(Inner)))
             End If
             Last = M.Index + M.Length
         Next
@@ -549,6 +600,7 @@ Public Class AgentMascot
             Sub(Full)
                 RunInUi(Sub()
                            Reply.Raw.Append(Full)
+                           If Reply.Notes.Count > 0 Then Reply.Notes.Clear()
                            RenderEntry(Reply)
                            LayoutMessages()
                        End Sub)
@@ -561,7 +613,13 @@ Public Class AgentMascot
                        End Sub)
             End Sub,
             Sub()
-                RunInUi(Sub() LayoutMessages())
+                RunInUi(Sub()
+                           If Reply.Notes.Count > 0 Then
+                               Reply.Notes.Clear()
+                               RenderEntry(Reply)
+                           End If
+                           LayoutMessages()
+                       End Sub)
             End Sub,
             Sub(Message)
                 RunInUi(Sub()
