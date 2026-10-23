@@ -572,7 +572,7 @@ Refresh:
         Settings.Set("UiCustomSecondary", $"{SecH},{SecS},{SecL}")
         Settings.Set("UiLauncherTheme", 14)
         '主题值没变时 Set 不会触发刷新，这里强制重算一次，保证连续调整都生效
-        ThemeRefresh()
+        ThemeRefreshForce()
         '同步单选框状态，让界面切到「自定义」
         SettingService.RefreshSettings(Me)
     End Sub
@@ -601,6 +601,9 @@ Refresh:
         If AniControlEnabled <> 0 Then Return
         Dispatcher.BeginInvoke(New Action(Sub()
                                              RefreshPickers()
+                                             RefreshCustomColorVisibility()
+                                             '同步所有主题单选项，避免不同父容器下出现多选
+                                             SettingService.RefreshSettings(Me)
                                              RefreshCustomColorVisibility()
                                          End Sub))
     End Sub

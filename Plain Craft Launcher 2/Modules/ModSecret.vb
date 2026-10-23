@@ -237,6 +237,34 @@ Friend Module ModSecret
             Logger.Error(ex, "刷新主题颜色失败", LogBehavior.Toast)
         End Try
     End Sub
+    ''' <summary>强制按当前设置重算主题颜色，忽略主题是否变化。</summary>
+    Public Sub ThemeRefreshForce()
+        Try
+            Dim Theme As Integer = Settings.Get(Of Integer)("UiLauncherTheme")
+            ThemeNow = Theme
+            If Theme = 16 Then
+                RainbowMode = True
+                StartRainbow()
+            Else
+                RainbowMode = False
+                StopRainbow()
+            End If
+            Dim H1 As Integer, S1 As Integer, L1 As Integer
+            Dim H2 As Integer, S2 As Integer, L2 As Integer
+            If Theme <> 16 AndAlso GetThemeColors(Theme, H1, S1, L1, H2, S2, L2) Then
+                ColorHue = H1
+                ColorSat = S1
+                ColorLightAdjust = L1 - 45
+                ColorHue2 = H2
+                ColorSat2 = S2
+                ColorLightAdjust2 = L2 - 48
+            End If
+            ApplyThemeColors()
+            ThemeRefreshMain()
+        Catch ex As Exception
+            Logger.Error(ex, "强制刷新主题颜色失败", LogBehavior.Toast)
+        End Try
+    End Sub
     Public Sub ThemeRefreshMain()
         RunInUi(
         Sub()
