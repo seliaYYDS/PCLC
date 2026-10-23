@@ -284,7 +284,9 @@ Public Module ModAgentTools
                    End Try
                End Sub)
         Done.WaitOne(20000)
-        Return If(Success, "已开始安装 " & Name & "，可在任务列表查看进度", "启动安装失败，请查看日志")
+        If Success Then Return "已开始安装 " & Name & "，可在任务列表查看进度"
+        Return "启动安装失败。可能原因：版本列表获取失败、磁盘空间不足或网络异常；" &
+               "可以让用户稍后重试，或在 设置 → 启动器 → 日志 中查看具体错误。"
     End Function
     Private Function LaunchGame() As String
         If McInstanceSelected Is Nothing Then Return "当前没有选中的版本，无法启动"
