@@ -15,12 +15,14 @@ Public Module ModAgentContent
             {"properties", New JObject From {
                 {"query", New JObject From {{"type", "string"}, {"description", "Search query (optional)."}}},
                 {"type", New JObject From {{"type", "string"}, {"description", "Resource type: mod/resourcepack/shader/datapack/modpack (default mod)."}}},
-                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Filter by Minecraft version, e.g. 1.20.1."}}},
+                {"gameVersion", New JObject From {{"type", "string"}, {"description", "Single Minecraft version, e.g. 1.20.1."}}},
+                {"gameVersions", New JObject From {{"type", "array"}, {"items", New JObject From {{"type", "string"}}}, {"description", "Multiple Minecraft versions (OR)."}}},
+                {"categories", New JObject From {{"type", "array"}, {"items", New JObject From {{"type", "string"}}}, {"description", "Categories/tags, multiple values are OR-ed, e.g. adventure, technology."}}},
                 {"loader", New JObject From {{"type", "string"}, {"description", "Filter by loader: fabric/forge/neoforge/quilt (mods only)."}}},
                 {"limit", New JObject From {{"type", "integer"}, {"description", "Result count (default 10, max 30)."}}},
                 {"offset", New JObject From {{"type", "integer"}, {"description", "Offset for pagination."}}},
                 {"sort", New JObject From {{"type", "string"}, {"description", "Sort: relevance/downloads/newest/updated (default relevance)."}}},
-                {"source", New JObject From {{"type", "string"}, {"description", "Source: modrinth/curseforge/both (default modrinth)."}}}
+                {"source", New JObject From {{"type", "string"}, {"description", "Source: modrinth/curseforge/both (default modrinth). both merges results."}}}
             }}
         }
         List.Add(New AgentTool With {
@@ -212,45 +214,101 @@ Public Module ModAgentContent
 
     ' ---- 搜索 ----
 
+    Private Function GetStringList(Args As JObject, Key As String) As List(Of String)
+        Dim Result As New List(Of String)
+        Dim Token As JToken = Args(Key)
+        If Token Is Nothing Then Return Result
+        If Token.Type = JTokenType.Array Then
+            For Each Item In CType(Token, JArray)
+                Dim Text As String = Item.ToString().Trim()
+                If Text <> "" AndAlso Not Result.Contains(Text) Then Result.Add(Text)
+            Next
+        Else
+            Dim Text As String = Token.ToString().Trim()
+            If Text <> "" Then Result.Add(Text)
+        End If
+        Return Result
+    End Function
+
     Private Function SearchContent(Args As JObject) As String
         Try
             Dim Source As String = If(Args("source") Is Nothing, "modrinth", Args("source").ToString().ToLower())
-            If Source = "curseforge" Then Return SearchCurseForge(Args)
-            Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
-            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
-            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
-            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
-            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
-            Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
-            Dim Sort As String = If(Args("sort") Is Nothing, "relevance", Args("sort").ToString())
-
-            Dim Facets As New JArray()
-            Facets.Add(New JArray From {"project_type:" & TypeToProjectType(Type)})
-            If GameVersion <> "" Then Facets.Add(New JArray From {"versions:" & GameVersion})
-            If Loader <> "" AndAlso TypeToProjectType(Type) = "mod" Then Facets.Add(New JArray From {"categories:" & Loader.ToLower()})
-
-            Dim Url As String = ModrinthApi & "search?limit=" & Limit & "&offset=" & Offset & "&index=" & Uri.EscapeDataString(Sort) &
-                                "&query=" & Uri.EscapeDataString(Query) &
-                                "&facets=" & Uri.EscapeDataString(Facets.ToString(Newtonsoft.Json.Formatting.None))
-            Dim Json As JToken = GetJson(Url)
-            Dim Hits As JArray = TryCast(Json("hits"), JArray)
-            If Hits Is Nothing Then Return "搜索失败：返回格式异常"
-            Dim Result As New JArray()
-            For Each Hit In Hits
-                Result.Add(New JObject From {
-                    {"slug", Hit("slug")?.ToString()},
-                    {"title", Hit("title")?.ToString()},
-                    {"description", Hit("description")?.ToString()},
-                    {"downloads", Hit("downloads")},
-                    {"author", Hit("author")?.ToString()},
-                    {"versions", Hit("versions")}
-                })
-            Next
-            Dim Wrapper As New JObject From {{"total", Json("total_hits")}, {"offset", Offset}, {"hits", Result}}
-            Return Wrapper.ToString(Newtonsoft.Json.Formatting.Indented)
+            Select Case Source
+                Case "curseforge"
+                    Return SearchCurseForge(Args).ToString(Newtonsoft.Json.Formatting.Indented)
+                Case "both"
+                    Dim A As JObject = SearchModrinth(Args)
+                    Dim B As JObject = SearchCurseForge(Args)
+                    Dim Hits As New JArray()
+                    For Each Item In CType(A("hits"), JArray)
+                        Hits.Add(Item)
+                    Next
+                    For Each Item In CType(B("hits"), JArray)
+                        Hits.Add(Item)
+                    Next
+                    Return New JObject From {
+                        {"source", "both"}, {"total", CInt(A("total")) + CInt(B("total"))},
+                        {"offset", If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)())}, {"hits", Hits}
+                    }.ToString(Newtonsoft.Json.Formatting.Indented)
+                Case Else
+                    Return SearchModrinth(Args).ToString(Newtonsoft.Json.Formatting.Indented)
+            End Select
         Catch ex As Exception
             Return "搜索失败：" & ex.Message
         End Try
+    End Function
+
+    Private Function SearchModrinth(Args As JObject) As JObject
+        Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
+        Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+        Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+        Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+        Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
+        Dim Sort As String = If(Args("sort") Is Nothing, "relevance", Args("sort").ToString())
+        Dim Versions As List(Of String) = GetStringList(Args, "gameVersions")
+        If Versions.Count = 0 AndAlso Args("gameVersion") IsNot Nothing Then Versions.Add(Args("gameVersion").ToString())
+        Dim Categories As List(Of String) = GetStringList(Args, "categories")
+
+        Dim Facets As New JArray()
+        Facets.Add(New JArray From {"project_type:" & TypeToProjectType(Type)})
+        If Versions.Count > 0 Then
+            Dim Group As New JArray()
+            For Each V In Versions
+                Group.Add("versions:" & V)
+            Next
+            Facets.Add(Group)
+        End If
+        If Categories.Count > 0 Then
+            Dim Group As New JArray()
+            For Each C In Categories
+                Group.Add("categories:" & C.ToLower())
+            Next
+            Facets.Add(Group)
+        End If
+        If Loader <> "" AndAlso TypeToProjectType(Type) = "mod" Then
+            Facets.Add(New JArray From {"categories:" & Loader.ToLower()})
+        End If
+
+        Dim Url As String = ModrinthApi & "search?limit=" & Limit & "&offset=" & Offset & "&index=" & Uri.EscapeDataString(Sort) &
+                            "&query=" & Uri.EscapeDataString(Query) &
+                            "&facets=" & Uri.EscapeDataString(Facets.ToString(Newtonsoft.Json.Formatting.None))
+        Dim Json As JToken = GetJson(Url)
+        Dim Hits As JArray = TryCast(Json("hits"), JArray)
+        If Hits Is Nothing Then Throw New Exception("返回格式异常")
+        Dim Result As New JArray()
+        For Each Hit In Hits
+            Result.Add(New JObject From {
+                {"slug", Hit("slug")?.ToString()},
+                {"title", Hit("title")?.ToString()},
+                {"description", Hit("description")?.ToString()},
+                {"downloads", Hit("downloads")},
+                {"author", Hit("author")?.ToString()},
+                {"categories", Hit("categories")},
+                {"versions", Hit("versions")},
+                {"source", "modrinth"}
+            })
+        Next
+        Return New JObject From {{"source", "modrinth"}, {"total", Json("total_hits")}, {"offset", Offset}, {"hits", Result}}
     End Function
 
     Private Function ListVersions(Args As JObject) As String
@@ -316,42 +374,58 @@ Public Module ModAgentContent
         End Select
     End Function
 
-    Private Function SearchCurseForge(Args As JObject) As String
-        Try
-            Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
-            Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
-            Dim GameVersion As String = If(Args("gameVersion") Is Nothing, "", Args("gameVersion").ToString())
-            Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
-            Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
-            Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
-            Dim Url As String = "https://api.curseforge.com/v1/mods/search?gameId=432&pageSize=" & Limit & "&index=" & Offset &
-                                "&classId=" & CurseForgeClassId(Type)
-            If Query <> "" Then Url &= "&searchFilter=" & Uri.EscapeDataString(Query)
-            If GameVersion <> "" Then Url &= "&gameVersion=" & Uri.EscapeDataString(GameVersion)
-            If Loader <> "" Then
-                Dim LoaderId As Integer = CurseForgeLoaderId(Loader)
-                If LoaderId > 0 Then Url &= "&modLoaderType=" & LoaderId
-            End If
-            Dim Json As JToken = DlModRequest(Url)
-            Dim Data As JArray = TryCast(Json("data"), JArray)
-            If Data Is Nothing Then Return "搜索失败：返回格式异常"
-            Dim Hits As New JArray()
-            For Each Item In Data
-                Hits.Add(New JObject From {
-                    {"id", Item("id")},
-                    {"slug", Item("slug")?.ToString()},
-                    {"title", Item("name")?.ToString()},
-                    {"description", Item("summary")?.ToString()},
-                    {"downloads", Item("downloadCount")},
-                    {"source", "curseforge"}
-                })
-            Next
-            Dim Total As JToken = Json("pagination")?.Item("totalCount")
-            Dim Wrapper As New JObject From {{"source", "curseforge"}, {"total", If(Total, JValue.CreateNull())}, {"offset", Offset}, {"hits", Hits}}
-            Return Wrapper.ToString(Newtonsoft.Json.Formatting.Indented)
-        Catch ex As Exception
-            Return "搜索失败（CurseForge）：" & ex.Message
-        End Try
+    Private Function SearchCurseForge(Args As JObject) As JObject
+        Dim Query As String = If(Args("query") Is Nothing, "", Args("query").ToString())
+        Dim Type As String = If(Args("type") Is Nothing, "mod", Args("type").ToString())
+        Dim Loader As String = If(Args("loader") Is Nothing, "", Args("loader").ToString())
+        Dim Limit As Integer = Math.Min(30, Math.Max(1, If(Args("limit") Is Nothing, 10, Args("limit").ToObject(Of Integer)())))
+        Dim Offset As Integer = Math.Max(0, If(Args("offset") Is Nothing, 0, Args("offset").ToObject(Of Integer)()))
+        Dim Sort As String = If(Args("sort") Is Nothing, "relevance", Args("sort").ToString()).ToLower()
+        Dim Versions As List(Of String) = GetStringList(Args, "gameVersions")
+        If Versions.Count = 0 AndAlso Args("gameVersion") IsNot Nothing Then Versions.Add(Args("gameVersion").ToString())
+        Dim Categories As List(Of String) = GetStringList(Args, "categories")
+
+        Dim SortField As Integer
+        Select Case Sort
+            Case "downloads" : SortField = 6
+            Case "newest" : SortField = 11
+            Case "updated" : SortField = 3
+            Case Else : SortField = 2
+        End Select
+
+        Dim Url As String = "https://api.curseforge.com/v1/mods/search?gameId=432&sortField=" & SortField & "&sortOrder=desc&pageSize=" & Limit & "&index=" & Offset &
+                            "&classId=" & CurseForgeClassId(Type)
+        If Query <> "" Then Url &= "&searchFilter=" & Uri.EscapeDataString(Query)
+        If Versions.Count > 0 Then Url &= "&gameVersion=" & Uri.EscapeDataString(Versions(0))
+        If Loader <> "" Then
+            Dim LoaderId As Integer = CurseForgeLoaderId(Loader)
+            If LoaderId > 0 Then Url &= "&modLoaderType=" & LoaderId
+        End If
+        If Categories.Count > 0 Then
+            If IsNumeric(Categories(0)) Then Url &= "&categoryId=" & Categories(0)
+        End If
+
+        Dim Json As JToken = DlModRequest(Url)
+        Dim Data As JArray = TryCast(Json("data"), JArray)
+        If Data Is Nothing Then Throw New Exception("返回格式异常")
+        Dim Hits As New JArray()
+        For Each Item In Data
+            Hits.Add(New JObject From {
+                {"id", Item("id")},
+                {"slug", Item("slug")?.ToString()},
+                {"title", Item("name")?.ToString()},
+                {"description", Item("summary")?.ToString()},
+                {"downloads", Item("downloadCount")},
+                {"source", "curseforge"}
+            })
+        Next
+        Dim Total As JToken = Json("pagination")?.Item("totalCount")
+        Return New JObject From {
+            {"source", "curseforge"},
+            {"total", If(Total Is Nothing, JValue.CreateNull(), Total)},
+            {"offset", Offset},
+            {"hits", Hits}
+        }
     End Function
 
     Private Function ListCurseForgeFiles(Project As String, Args As JObject) As String
