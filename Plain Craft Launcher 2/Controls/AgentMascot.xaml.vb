@@ -45,6 +45,7 @@ Public Class AgentMascot
     Private ReadOnly MessageShown As New List(Of Boolean)
     Private ReadOnly MascotScale As New ScaleTransform(1, 1)
     Private ReadOnly WheelCatcher As New Border()
+    Private WithEvents MoodTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromSeconds(30)}
     Private WithEvents LayoutTimer As New Windows.Threading.DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(50)}
     Private LayoutRequested As Boolean = False
 
@@ -104,6 +105,10 @@ Public Class AgentMascot
         Panel.SetZIndex(WheelCatcher, -1)
         PanMessageLayer.Children.Add(WheelCatcher)
         AddSway(PanInput, 3.0, 3.0)
+        AddHandler MoodTimer.Tick, Sub()
+                                           MoodTimer.Stop()
+                                           SetMood("normal")
+                                       End Sub
         LayoutTimer.Start()
     End Sub
 
@@ -133,6 +138,8 @@ Public Class AgentMascot
             ImgMascot.Source = New BitmapImage(New Uri("pack://application:,,,/PCLC;component/Images/Celia/celia_" & Mood & ".png"))
         Catch
         End Try
+        MoodTimer.Stop()
+        If Mood <> "normal" Then MoodTimer.Start()
     End Sub
 
     Private Sub PositionMascot()
