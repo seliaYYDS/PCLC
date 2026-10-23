@@ -36,15 +36,17 @@
                             <ColumnDefinition />
                         </Grid.ColumnDefinitions>
                         <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="接口地址" Margin="0,0,25,0" />
-                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentBaseUrl" HintText="留空则使用提供商默认地址" />
+                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentBaseUrl" HintText="切换提供商会自动填写" />
                     </Grid>
                     <Grid Height="28" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
                             <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock VerticalAlignment="Center" HorizontalAlignment="Left" Text="模型" Margin="0,0,25,0" />
-                        <local:MyTextBox Grid.Column="1" local:SettingService.Key="AgentModel" HintText="如 deepseek-chat，留空使用默认模型" />
+                        <local:MyComboBox x:Name="ComboAgentModel" Grid.Column="1" IsEditable="True" Height="28" Margin="0,0,10,0" HintText="可手动填写，或点右侧获取" />
+                        <local:MyButton x:Name="BtnGetModels" Grid.Column="2" Text="获取模型" MinWidth="90" Height="28" Padding="10,0" />
                     </Grid>
                     <Grid Height="28" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
@@ -65,8 +67,8 @@
                             <local:MyComboBoxItem local:SettingService.Value="1" Content="标准：仅高风险操作需确认" />
                             <local:MyComboBoxItem local:SettingService.Value="2" Content="宽松：同会话内首次确认后不再询问" />
                         </local:MyComboBox>
-                    <local:MyCheckBox local:SettingService.Key="AgentAllowLocalNet" Text="允许小瑟访问本机与内网地址" Margin="-1,10,0,0" Height="22" />
                     </Grid>
+                    <local:MyCheckBox local:SettingService.Key="AgentAllowLocalNet" Text="允许小瑟访问本机与内网地址" Margin="-1,14,0,0" Height="22" />
                 </StackPanel>
             </local:MyCard>
         </StackPanel>

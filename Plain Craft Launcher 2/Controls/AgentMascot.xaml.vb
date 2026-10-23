@@ -55,10 +55,10 @@ Public Class AgentMascot
         If ActualWidth <= 0 Then Return
         Dim X As Double = Settings.Get(Of Integer)("AgentPosX")
         Dim Y As Double = Settings.Get(Of Integer)("AgentPosY")
-        If X < 0 Then X = ActualWidth - 88
-        If Y < 0 Then Y = ActualHeight - 96
-        X = Math.Max(0, Math.Min(ActualWidth - 64, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 64, Y))
+        If X < 0 Then X = ActualWidth - 120
+        If Y < 0 Then Y = ActualHeight - 128
+        X = Math.Max(0, Math.Min(ActualWidth - 96, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - 96, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         PositionBubble()
@@ -68,10 +68,20 @@ Public Class AgentMascot
         If PanBubble Is Nothing Then Return
         Dim X As Double = Canvas.GetLeft(ImgMascot)
         Dim Y As Double = Canvas.GetTop(ImgMascot)
-        Dim BubbleLeft As Double = Math.Max(8, Math.Min(ActualWidth - 388, X - 316))
-        Dim BubbleTop As Double = Math.Max(8, Y - 470)
-        If BubbleTop < 8 Then BubbleTop = Math.Min(ActualHeight - 480, Y + 72)
-        Canvas.SetLeft(PanBubble, BubbleLeft)
+        Dim MascotSize As Double = If(ImgMascot.ActualWidth > 0, ImgMascot.ActualWidth, 96)
+        Dim BubbleWidth As Double = If(PanBubble.ActualWidth > 0, PanBubble.ActualWidth, 380)
+        Dim BubbleHeight As Double = If(PanBubble.ActualHeight > 0, PanBubble.ActualHeight, 470)
+        '优先放在人偶右侧，空间不足则放左侧
+        Dim BubbleLeft As Double
+        If X + MascotSize + 10 + BubbleWidth <= ActualWidth - 8 Then
+            BubbleLeft = X + MascotSize + 10
+        Else
+            BubbleLeft = Math.Max(8, X - BubbleWidth - 10)
+        End If
+        '底边与人偶底部对齐
+        Dim BubbleTop As Double = Y + MascotSize - BubbleHeight
+        BubbleTop = Math.Max(8, Math.Min(ActualHeight - BubbleHeight - 8, BubbleTop))
+        Canvas.SetLeft(PanBubble, Math.Max(8, Math.Min(ActualWidth - BubbleWidth - 8, BubbleLeft)))
         Canvas.SetTop(PanBubble, Math.Max(8, BubbleTop))
     End Sub
 
@@ -91,8 +101,8 @@ Public Class AgentMascot
         If Not IsDragging Then Return
         Dim X As Double = DragOffset.X + Now.X - DragStart.X
         Dim Y As Double = DragOffset.Y + Now.Y - DragStart.Y
-        X = Math.Max(0, Math.Min(ActualWidth - 64, X))
-        Y = Math.Max(0, Math.Min(ActualHeight - 64, Y))
+        X = Math.Max(0, Math.Min(ActualWidth - 96, X))
+        Y = Math.Max(0, Math.Min(ActualHeight - 96, Y))
         Canvas.SetLeft(ImgMascot, X)
         Canvas.SetTop(ImgMascot, Y)
         PositionBubble()

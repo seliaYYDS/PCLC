@@ -1,3 +1,6 @@
+Imports System.Net
+Imports Newtonsoft.Json.Linq
+
 ''' <summary>AI 助手的模型提供商预设。</summary>
 Public Class AgentProviderPreset
     Public Id As String
@@ -7,6 +10,31 @@ Public Class AgentProviderPreset
 End Class
 
 Public Module ModAgentProviders
+    ''' <summary>请求 /models 接口，返回可用模型 id 列表。</summary>
+    Public Function FetchModels() As List(Of String)
+        Dim Result As New List(Of String)
+        Dim BaseUrl As String = CurrentBaseUrl()
+        If String.IsNullOrWhiteSpace(BaseUrl) Then Throw New Exception("尚未配置接口地址")
+        Dim Request As HttpWebRequest = CType(WebRequest.Create(BaseUrl & "/models"), HttpWebRequest)
+        Request.Method = "GET"
+        Request.Timeout = 20000
+        Dim Key As String = Settings.Get(Of String)("AgentApiKey")
+        If Not String.IsNullOrWhiteSpace(Key) Then Request.Headers.Add("Authorization", "Bearer " & Key)
+        Using Response = CType(Request.GetResponse(), HttpWebResponse)
+            Using Reader As New IO.StreamReader(Response.GetResponseStream(), System.Text.Encoding.UTF8)
+                Dim Json As JObject = JObject.Parse(Reader.ReadToEnd())
+                Dim Data = TryCast(Json("data"), JArray)
+                If Data IsNot Nothing Then
+                    For Each Item In Data
+                        Dim Id As String = Item("id")?.ToString()
+                        If Not String.IsNullOrEmpty(Id) Then Result.Add(Id)
+                    Next
+                End If
+            End Using
+        End Using
+        Return Result
+    End Function
+
     Public ReadOnly Presets As New List(Of AgentProviderPreset)
 
     Sub New()
@@ -33,6 +61,17 @@ Public Module ModAgentProviders
         Return Presets(Index)
     End Function
 
+    ''' <summary>切换提供商后，把接口地址与默认模型写入设置。</summary>
+    Public Sub ApplyProviderDefaults()
+        Try
+            Dim Preset = GetPreset(Settings.Get(Of Integer)("AgentProvider"))
+            If Preset.Id = "custom" Then Return
+            Settings.Set("AgentBaseUrl", Preset.BaseUrl)
+            If Preset.Models.Length > 0 Then Settings.Set("AgentModel", Preset.Models(0))
+        Catch ex As Exception
+            Logger.Warn(ex, "应用提供商默认值失败")
+        End Try
+    End Sub
     ''' <summary>当前生效的 BaseUrl（未填写时回落到预设）。</summary>
     Public Function CurrentBaseUrl() As String
         Dim Custom As String = Settings.Get(Of String)("AgentBaseUrl")

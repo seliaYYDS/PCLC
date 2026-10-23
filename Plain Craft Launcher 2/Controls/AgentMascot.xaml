@@ -4,11 +4,7 @@
         xmlns:local="clr-namespace:PCL"
         Background="{x:Null}">
     <Border x:Name="PanBubble" Width="380" MaxHeight="470" Visibility="Collapsed"
-            HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="8" Background="#FFFFFF"
-            BorderBrush="#D8DCE8" BorderThickness="1" Margin="0">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.22" Direction="270"/>
-        </Border.Effect>
+            HorizontalAlignment="Left" VerticalAlignment="Top" Background="{x:Null}" BorderThickness="0">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -16,31 +12,39 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Grid Height="38" Background="#F5F6FA">
-                <TextBlock Text="小瑟" FontSize="13" FontWeight="SemiBold" Foreground="#3B4053" VerticalAlignment="Center" Margin="14,0,0,0"/>
-                <local:MyIconButton x:Name="BtnAgentClose" HorizontalAlignment="Right" Height="24" Width="24" Margin="0,0,6,0"
+
+            <Grid Height="34" Background="{x:Null}">
+                <TextBlock Text="小瑟" FontSize="12" FontWeight="SemiBold" Foreground="#5A6075" VerticalAlignment="Center" Margin="8,0,0,4"/>
+                <local:MyIconButton x:Name="BtnAgentClose" HorizontalAlignment="Right" Height="24" Width="24" Margin="0,0,4,0"
                                     Theme="White" LogoScale="0.6" Logo="F1 M2,0 L0,2 8,10 0,18 2,20 10,12 18,20 20,18 12,10 20,2 18,0 10,8 2,0Z"/>
-                <local:MyIconButton x:Name="BtnAgentClear" HorizontalAlignment="Right" Height="24" Width="24" Margin="0,0,32,0"
+                <local:MyIconButton x:Name="BtnAgentClear" HorizontalAlignment="Right" Height="24" Width="24" Margin="0,0,30,0"
                                     Theme="White" LogoScale="0.55" Logo="F0 M4,2 h12 v2 h-12 v-2 Z M5,6 h10 v10 h-10 v-10 Z"/>
             </Grid>
-            <ScrollViewer x:Name="PanScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="10,8,10,4">
+
+            <ScrollViewer x:Name="PanScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="4,4,4,4">
                 <StackPanel x:Name="PanMessages"/>
             </ScrollViewer>
+
             <TextBlock x:Name="LabAgentStatus" Grid.Row="2" Visibility="Collapsed" FontSize="11" Foreground="#8A90A6"
-                       Margin="14,0,10,2" TextTrimming="CharacterEllipsis" />
-            <Grid Grid.Row="3" Height="46">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="TxtInput" Margin="10,6,6,10" FontSize="13" VerticalContentAlignment="Center"
-                         BorderBrush="#D8DCE8" BorderThickness="1" Padding="6,0" KeyDown="TxtInput_KeyDown"/>
-                <local:MyButton x:Name="BtnSend" Grid.Column="1" Text="发送" MinWidth="62" Height="30" Margin="0,6,10,10" Padding="10,0"/>
-            </Grid>
+                       Margin="10,0,10,2" TextTrimming="CharacterEllipsis" />
+
+            <Border Grid.Row="3" Margin="4,0,4,4" Height="42" CornerRadius="8" Background="#FFFFFF"
+                    BorderBrush="#D8DCE8" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="TxtInput" Margin="8,5,6,5" FontSize="13" VerticalContentAlignment="Center"
+                             Background="{x:Null}" BorderThickness="0" Padding="6,0" KeyDown="TxtInput_KeyDown"/>
+                    <local:MyButton x:Name="BtnSend" Grid.Column="1" Text="发送" MinWidth="62" Height="30"
+                                    Margin="0,0,6,0" VerticalAlignment="Center" Padding="10,0"/>
+                </Grid>
+            </Border>
         </Grid>
     </Border>
 
-    <Image x:Name="ImgMascot" Width="64" Height="64" Cursor="Hand" Stretch="Uniform"
+    <Image x:Name="ImgMascot" Width="96" Height="96" Cursor="Hand" Stretch="Uniform"
            RenderOptions.BitmapScalingMode="HighQuality">
         <Image.RenderTransform>
             <TranslateTransform x:Name="TransMascot"/>
