@@ -651,7 +651,7 @@ Public Class FormMain
         RectForm.Rect = New Rect(0, 0, BorderForm.ActualWidth, BorderForm.ActualHeight)
         PanForm.Width = BorderForm.ActualWidth + 0.001
         PanForm.Height = BorderForm.ActualHeight + 0.001
-        PanMain.Width = PanForm.Width
+        PanMain.Width = PanForm.Width - SideOffset
         PanMain.Height = Math.Max(0, PanForm.Height - PanTitle.ActualHeight)
         If WindowState = WindowState.Maximized Then WindowState = WindowState.Normal '修复 #1938
     End Sub
@@ -760,6 +760,7 @@ Public Class FormMain
     End Sub
 
     '侧边标题栏：独立容器，左右模式下把导航与窗口按钮搬进去
+    Public SideOffset As Double = 0
     Private SideBar As Grid
     Private SideBarDragging As Boolean = False
 
@@ -898,6 +899,9 @@ Public Class FormMain
                 PanTitle.HorizontalAlignment = HorizontalAlignment.Stretch
                 PanTitle.VerticalAlignment = VerticalAlignment.Stretch
                 Panel.SetZIndex(PanTitle, 0)
+                SideOffset = 0
+                PanMain.Margin = New Thickness(0)
+                PanMain.Width = PanForm.ActualWidth
                 PanTitleSelectHost.Width = Double.NaN
                 PanTitleSelectHost.Height = 27
                 PanTitleSelectHost.Margin = New Thickness(13, 0, 13, 0)
@@ -925,11 +929,15 @@ Public Class FormMain
                     Grid.SetColumn(Child, 0)
                     Dim Element = TryCast(Child, FrameworkElement)
                     If Element IsNot Nothing Then
-                        Element.Margin = If(Position = 1, New Thickness(56, 0, 0, 0), New Thickness(0, 0, 56, 0))
+                        Element.Margin = New Thickness(0)
                         Element.ClearValue(FrameworkElement.HeightProperty)
                         Element.VerticalAlignment = VerticalAlignment.Stretch
                     End If
                 Next
+                SideOffset = 56
+                If PanLeft IsNot Nothing Then PanLeft.Margin = If(Position = 1, New Thickness(56, 0, 0, 0), New Thickness(0))
+                PanMain.Margin = If(Position = 1, New Thickness(56, 0, 0, 0), New Thickness(0))
+                PanMain.Width = Math.Max(0, PanForm.ActualWidth - SideOffset)
                 '构造侧边标题栏
                 SideBar = New Grid With {
                     .Width = 56,
